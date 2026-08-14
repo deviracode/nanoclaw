@@ -18,7 +18,8 @@ Decisions taken during brainstorming:
 | Base | v2 (this repo) |
 | Deploy repo | This repo (fork of nanocoai/nanoclaw, upstream remote already configured) |
 | Channels | WhatsApp + Telegram, committed into the fork (skill-pinned deps) |
-| Credentials | OneCLI gateway as a separate Railway service (private network) |
+| Agent provider | **OpenCode** (default), committed from the `providers` branch; `claude` stays available per-group as fallback |
+| Credentials | OneCLI gateway as a separate Railway service (private network) — injects OpenCode provider keys via `HTTPS_PROXY` + `--host-pattern` (e.g. `openrouter.ai`, `api.deepseek.com`) |
 | Deploy transport | Railway git auto-deploy on push to `main`; `railway up` optional |
 | Build | Dockerfile (Nixpacks cannot express apt/Bun/global CLIs) |
 | Config | Railway IaC (`.railway/railway.ts`), mirroring the torup project pattern |
@@ -73,6 +74,32 @@ providers/claude.ts). Defaults unchanged → Docker mode and existing tests
 untouched. This is what makes concurrent per-session child processes possible
 (each gets its own env).
 
+## Part 1b — OpenCode as the agent provider
+
+The Railway deployment defaults to **OpenCode** as the agent backend, not the
+Claude Agent SDK. This is the `/add-opencode` skill's install, committed into
+the fork (same pattern as channels):
+
+- From the `providers` branch: `src/providers/opencode.ts` + registration
+  test + barrel import (host), `container/agent-runner/src/providers/opencode.ts`
+  + `mcp-to-opencode.ts` + tests + barrel import (container), and
+  `src/opencode-dockerfile.test.ts` (the install guard).
+- `@opencode-ai/sdk@1.4.17` added to `container/agent-runner/package.json`
+  (pinned — the 1.14.x SDK has a breaking session API; never bump blindly).
+- `opencode-ai@1.4.17` global CLI installed in the Railway image (same pin as
+  the SDK, per the skill's rule). claude-code remains installed as fallback
+  so any group can still be switched with `ncl groups config update --provider`.
+- **Provider selection**: bootstrap creates groups with `provider: opencode`
+  (or `DEFAULT_AGENT_PROVIDER=opencode` in Railway env). Host env:
+  `OPENCODE_PROVIDER`, `OPENCODE_MODEL` (`provider/model` form), optional
+  `OPENCODE_SMALL_MODEL`, and `ANTHROPIC_BASE_URL` = the upstream API base
+  (e.g. `https://openrouter.ai/api/v1`) for non-`anthropic` providers.
+- **Credentials**: provider API keys registered in OneCLI with matching
+  `--host-pattern`; the gateway injects them via `HTTPS_PROXY` — keys never
+  live in Railway env or the container environment. The OneCLI service
+  decision in Part 2 is unchanged (and is what makes OpenCode-with-vault
+  work on Railway).
+
 ## Part 2 — Railway IaC + image + OneCLI service
 
 ### `.railway/railway.ts` (committed, torup pattern)
@@ -84,7 +111,8 @@ untouched. This is what makes concurrent per-session child processes possible
   Env: `ONECLI_URL: "http://${{nanoclaw-onecli.RAILWAY_PRIVATE_DOMAIN}}:10254"`
   (raw string syntax, never template literals — torup pitfall #4), plus
   `preserve()` for `ONECLI_API_KEY`, `TELEGRAM_BOT_TOKEN`, WhatsApp creds,
-  bootstrap vars.
+  bootstrap vars, and OpenCode host env (`OPENCODE_PROVIDER`,
+  `OPENCODE_MODEL`, `OPENCODE_SMALL_MODEL`, `ANTHROPIC_BASE_URL`).
 - **`nanoclaw-onecli`** service: same repo source,
   `railway/Dockerfile.onecli` (node:22-slim + `npm install -g onecli@<pin>` +
   gateway serve command on port 10254 — exact subcommand verified at
@@ -111,11 +139,14 @@ untouched. This is what makes concurrent per-session child processes possible
   `whatsapp-formatting`/`telegram-formatting` container skills under
   `container/skills/`. Reproducible builds; occasional trivial `package.json`
   merge conflicts are the only sync cost.
+- **OpenCode provider committed into the fork**: per Part 1b (provider files,
+  `@opencode-ai/sdk@1.4.17` in agent-runner, `opencode-ai@1.4.17` CLI in the
+  final stage).
 - **Final stage**: node:22-slim + Chromium + fonts + git/curl/ca-certs (apt
   list from `container/Dockerfile`), host dist + node_modules, agent-runner
   src + node_modules at `/app/agent-runner`, `container/skills` → `/app/skills`,
-  `container/CLAUDE.md` → `/app/CLAUDE.md`, claude-code + agent-browser via the
-  existing `container/install-cli-tools.sh` pins.
+  `container/CLAUDE.md` → `/app/CLAUDE.md`, opencode-ai + claude-code +
+  agent-browser via the existing `container/install-cli-tools.sh` pins.
 - **Entrypoint** (`railway/entrypoint.sh`): ensure `/data` dirs, then
   `node dist/index.js`.
 - **Healthcheck**: v2 host has no HTTP server — add a tiny health endpoint
@@ -139,9 +170,10 @@ untouched. This is what makes concurrent per-session child processes possible
 
 - New module reusing `scripts/init-first-agent.ts`'s wiring functions: on
   startup, if zero users exist and `NANOCLAW_BOOTSTRAP=1`, create the owner
-  user (`NANOCLAW_OWNER_ID=telegram:<id>`), agent group, messaging groups +
-  wirings for configured channels, grant owner role, send a welcome DM through
-  the normal delivery path. Skipped on later boots (DB already seeded).
+  user (`NANOCLAW_OWNER_ID=telegram:<id>`), agent group (provider set to
+  `opencode`), messaging groups + wirings for configured channels, grant
+  owner role, send a welcome DM through the normal delivery path. Skipped on
+  later boots (DB already seeded).
 - WhatsApp pairing is the one manual step: adapter prints QR/pairing code to
   logs → pair from phone; auth persists on the volume.
 - Channel creds (`TELEGRAM_BOT_TOKEN`, WhatsApp) via Railway env `preserve()`,
@@ -177,3 +209,8 @@ untouched. This is what makes concurrent per-session child processes possible
    `nc:append` directives.
 4. Telegram formatting skill name/path on the `channels` branch.
 5. Whether `@onecli-sh/sdk` has a non-docker (host-mode) config API.
+6. OpenCode model/router choice for `OPENCODE_MODEL` (env-time, no code
+   dependency — e.g. `openrouter/anthropic/claude-sonnet-4` or
+   `deepseek/deepseek-chat`).
+7. Confirm `providers` branch file list matches the skill's copy list
+   (including `mcp-to-opencode.ts`).
