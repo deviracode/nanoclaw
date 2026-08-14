@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 
+import { MOUNT_ENV_MAP } from './container-runtime.js';
+
 /**
  * Host-runtime translation of the OneCLI container config. The docker path
  * calls `onecli.applyContainerConfig(args)` which appends `-e` / `-v` args;
@@ -23,12 +25,8 @@ export interface HostModeFiles {
 
 const SYSTEM_CA_PATHS = ['/etc/ssl/certs/ca-certificates.crt', '/etc/pki/tls/certs/ca-bundle.crt'];
 
-/** Container-path prefixes the host runtime relocates via env (matches container-runtime MOUNT_ENV_MAP). */
-const CONTAINER_PREFIX_ENV: Record<string, string> = {
-  '/workspace/agent': 'AGENT_DIR',
-  '/workspace': 'WORKSPACE_DIR',
-  '/home/node/.claude': 'CLAUDE_CONFIG_DIR',
-};
+/** Container-path prefixes the host runtime relocates via env (shared with container-runtime). */
+const CONTAINER_PREFIX_ENV: Record<string, string> = { ...MOUNT_ENV_MAP };
 
 export function mapContainerPathToHost(containerPath: string, mountEnv: Record<string, string>): string {
   const prefixes = Object.entries(CONTAINER_PREFIX_ENV).sort((a, b) => b[0].length - a[0].length);
@@ -39,6 +37,38 @@ export function mapContainerPathToHost(containerPath: string, mountEnv: Record<s
     }
   }
   return containerPath; // unmapped — treat as host-absolute
+}
+
+export interface RelocateResult {
+  relocated: string[];
+  skipped: string[];
+}
+
+/**
+ * Copy credential stubs to their relocated host paths. Files whose
+ * containerPath doesn't map to a relocated prefix (e.g. the CA entry,
+ * served via env vars) are skipped, never written to literal host paths.
+ */
+export function relocateCredentialFiles(
+  files: HostModeFiles[],
+  mountEnv: Record<string, string>,
+): RelocateResult {
+  const result: RelocateResult = { relocated: [], skipped: [] };
+  for (const file of files) {
+    if (!file.containerPath) {
+      result.skipped.push(file.hostPath);
+      continue;
+    }
+    const hostPath = mapContainerPathToHost(file.containerPath, mountEnv);
+    if (hostPath === file.containerPath) {
+      result.skipped.push(file.containerPath);
+      continue;
+    }
+    fs.mkdirSync(path.dirname(hostPath), { recursive: true });
+    fs.writeFileSync(hostPath, file.content, { mode: 0o600 });
+    result.relocated.push(hostPath);
+  }
+  return result;
 }
 
 function findSystemCaBundle(): string | null {

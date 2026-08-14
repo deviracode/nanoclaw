@@ -1,9 +1,14 @@
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { applyOnecliConfigHostMode, mapContainerPathToHost, rewriteProxyHost } from './onecli-host-mode.js';
+import {
+  applyOnecliConfigHostMode,
+  mapContainerPathToHost,
+  relocateCredentialFiles,
+  rewriteProxyHost,
+} from './onecli-host-mode.js';
 
 let dataDir: string;
 
@@ -137,5 +142,47 @@ describe('mapContainerPathToHost', () => {
 
   test('falls back to the original path when the env var is unset', () => {
     expect(mapContainerPathToHost('/workspace/agent/.auth', {})).toBe('/workspace/agent/.auth');
+  });
+});
+
+describe('relocateCredentialFiles', () => {
+  let mountEnv: Record<string, string>;
+
+  beforeEach(() => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'onecli-host-mode-'));
+    mountEnv = { AGENT_DIR: path.join(dataDir, 'groups', 'dm-x'), WORKSPACE_DIR: path.join(dataDir, 'sess') };
+  });
+
+  test('relocates mapped stubs with mode 0600 and content', () => {
+    const hostPath = path.join(mountEnv.AGENT_DIR, '.auth');
+    const out = relocateCredentialFiles(
+      [{ containerPath: '/workspace/agent/.auth', hostPath, content: 'stub-content' }],
+      mountEnv,
+    );
+
+    expect(out.relocated).toEqual([hostPath]);
+    expect(out.skipped).toEqual([]);
+    expect(fs.readFileSync(hostPath, 'utf8')).toBe('stub-content');
+    expect(fs.statSync(hostPath).mode & 0o777).toBe(0o600);
+  });
+
+  test('skips unmapped files (e.g. CA entry) and never writes the literal container path', () => {
+    const literal = path.join(dataDir, 'onecli-ca.pem');
+    const out = relocateCredentialFiles(
+      [{ containerPath: literal, hostPath: path.join(dataDir, 'certs', 'ca.pem'), content: 'ca' }],
+      mountEnv,
+    );
+
+    expect(out.skipped).toEqual([literal]);
+    expect(out.relocated).toEqual([]);
+    expect(fs.existsSync(literal)).toBe(false);
+  });
+
+  test('skips files with no containerPath', () => {
+    const out = relocateCredentialFiles([{ containerPath: '', hostPath: path.join(dataDir, 'x.pem'), content: 'x' }], mountEnv);
+
+    expect(out.skipped).toEqual([path.join(dataDir, 'x.pem')]);
+    expect(out.relocated).toEqual([]);
+    expect(fs.existsSync(path.join(dataDir, 'x.pem'))).toBe(false);
   });
 });

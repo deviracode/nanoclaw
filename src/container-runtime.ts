@@ -92,7 +92,7 @@ export function cleanupOrphans(): void {
 }
 
 /** Mount containerPath → child-process env var (host runtime). */
-const MOUNT_ENV_MAP: Record<string, string> = {
+export const MOUNT_ENV_MAP: Record<string, string> = {
   '/workspace': 'WORKSPACE_DIR',
   '/workspace/agent': 'AGENT_DIR',
   '/home/node/.claude': 'CLAUDE_CONFIG_DIR',

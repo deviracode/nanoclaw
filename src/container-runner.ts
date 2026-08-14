@@ -44,7 +44,8 @@ import { initGroupFilesystem } from './group-init.js';
 import { stopTypingRefresh } from './modules/typing/index.js';
 import { log } from './log.js';
 import { validateAdditionalMounts } from './modules/mount-security/index.js';
-import { applyOnecliConfigHostMode, mapContainerPathToHost } from './onecli-host-mode.js';
+import { applyOnecliConfigHostMode, relocateCredentialFiles } from './onecli-host-mode.js';
+import type { OnecliContainerConfig } from './onecli-host-mode.js';
 // Provider host-side config barrel — each provider that needs host-side
 // container setup self-registers on import.
 import './providers/index.js';
@@ -236,6 +237,15 @@ async function spawnContainer(session: Session): Promise<void> {
  * `getContainerConfig` translated to env + local files.
  */
 async function spawnContainerHost(session: Session, agentGroup: AgentGroup): Promise<void> {
+  // Refresh the destination map and current-thread routing so any admin
+  // changes take effect on wake. Destinations come from the agent-to-agent
+  // module — skip when the module isn't installed (table absent).
+  if (hasTable(getDb(), 'agent_destinations')) {
+    const { writeDestinations } = await import('./modules/agent-to-agent/write-destinations.js');
+    writeDestinations(agentGroup.id, session.id);
+  }
+  writeSessionRouting(agentGroup.id, session.id);
+
   // Materialize + init group filesystem (same as the docker path).
   const containerConfig = materializeContainerJson(agentGroup.id);
   const providerName = resolveProviderName(session.agent_provider, containerConfig.provider);
@@ -253,7 +263,12 @@ async function spawnContainerHost(session: Session, agentGroup: AgentGroup): Pro
   // OneCLI gateway — same semantics as the docker path: unreachable = refuse to spawn.
   const agentIdentifier = agentGroup.id;
   await onecli.ensureAgent({ name: agentGroup.name, identifier: agentIdentifier });
-  const gatewayConfig = await onecli.getContainerConfig({ agent: agentIdentifier });
+  let gatewayConfig: OnecliContainerConfig | false;
+  try {
+    gatewayConfig = await onecli.getContainerConfig({ agent: agentIdentifier });
+  } catch (err) {
+    throw new Error('OneCLI gateway not applied — refusing to spawn agent without credentials', { cause: err });
+  }
   if (!gatewayConfig) {
     throw new Error('OneCLI gateway not applied — refusing to spawn agent without credentials');
   }
@@ -261,12 +276,14 @@ async function spawnContainerHost(session: Session, agentGroup: AgentGroup): Pro
   Object.assign(extraEnv, onecliApplied.env);
 
   // Credential stubs: copy each to its relocated host path (the agent reads
-  // them at the container path, which is host-relative in host mode).
-  for (const file of onecliApplied.files) {
-    if (!file.containerPath) continue;
-    const hostPath = mapContainerPathToHost(file.containerPath, mountEnv);
-    fs.mkdirSync(path.dirname(hostPath), { recursive: true });
-    fs.writeFileSync(hostPath, file.content, { mode: 0o600 });
+  // them at the container path, which is host-relative in host mode). Files
+  // that don't map (e.g. the CA bundle, served via env vars) are skipped.
+  const relocation = relocateCredentialFiles(onecliApplied.files, mountEnv);
+  if (relocation.skipped.length > 0) {
+    log.warn('Skipped relocating unmapped credential files (served via env)', {
+      skipped: relocation.skipped,
+      containerName: `host-${agentGroup.folder}-${session.id}`,
+    });
   }
 
   const env: NodeJS.ProcessEnv = {
