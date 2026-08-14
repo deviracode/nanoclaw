@@ -4,9 +4,11 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 describe('host runtime config', () => {
   const saved = { runtime: process.env.NANOCLAW_RUNTIME, home: process.env.NANOCLAW_HOME, port: process.env.PORT };
   afterEach(() => {
+    const envKey = { runtime: 'NANOCLAW_RUNTIME', home: 'NANOCLAW_HOME', port: 'PORT' } as const;
     for (const [key, value] of Object.entries(saved)) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
+      const envName = envKey[key as keyof typeof envKey];
+      if (value === undefined) delete process.env[envName];
+      else process.env[envName] = value;
     }
     vi.resetModules();
   });
