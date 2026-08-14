@@ -5,11 +5,11 @@
  * No stdin, no stdout markers, no IPC files.
  *
  * Config is read from AGENT_DIR/container.json (mounted RO).
- * Only TZ and OneCLI networking vars come from env.
  *
  * Runtime roots (WORKSPACE_DIR, AGENT_DIR, EXTRA_DIR, SRC_DIR, SKILLS_DIR)
  * come from ./paths.ts — docker-layout defaults, env-overridable per-session
- * in host runtime (Railway).
+ * in host runtime (Railway). TZ and OneCLI networking vars also come from
+ * env; no other configuration does.
  *
  * Mount structure (docker layout):
  *   WORKSPACE_DIR/
@@ -60,9 +60,9 @@ async function main(): Promise<void> {
   // Runtime-generated system-prompt addendum: agent identity (name) plus
   // the live destinations map. Everything else (capabilities, per-module
   // instructions, per-channel formatting) is loaded by Claude Code from
-  // /workspace/agent/CLAUDE.md — the composed entry imports the shared
-  // base (/app/CLAUDE.md) and each enabled module's fragment. Memory is
-  // supplied separately by each provider's native lifecycle hook.
+  // AGENT_DIR/CLAUDE.md — the composed entry imports the shared base
+  // (/app/CLAUDE.md, image-fixed) and each enabled module's fragment.
+  // Memory is supplied separately by each provider's native lifecycle hook.
   const taskId = getTaskSeriesId();
   const instructions = buildSystemPromptAddendum(
     config.assistantName || undefined,

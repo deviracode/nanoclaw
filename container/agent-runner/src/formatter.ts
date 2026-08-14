@@ -1,3 +1,5 @@
+import path from 'path';
+
 import { findByRouting } from './destinations.js';
 import type { MessageInRow } from './db/messages-in.js';
 import { WORKSPACE_DIR } from './paths.js';
@@ -277,7 +279,7 @@ function formatAttachments(attachments: any[] | undefined): string {
   const parts = attachments.map((a) => {
     const name = a.name || a.filename || 'attachment';
     const type = a.type || 'file';
-    const localPath = a.localPath ? `${WORKSPACE_DIR}/${a.localPath}` : '';
+    const localPath = a.localPath ? path.join(WORKSPACE_DIR, a.localPath) : '';
     const url = a.url || '';
     if (localPath) {
       return `[${type}: ${escapeXml(name)} — saved to ${escapeXml(localPath)}]`;

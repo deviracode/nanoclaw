@@ -3,8 +3,8 @@
  * ncl — NanoClaw CLI client (container edition).
  *
  * Same interface as the host-side `bin/ncl`. Detects that it's inside a
- * container (the session DBs exist at /workspace/) and uses a DB transport
- * instead of the Unix socket transport.
+ * container (the session DBs exist under WORKSPACE_DIR) and uses a DB
+ * transport instead of the Unix socket transport.
  *
  * Writes a cli_request system message to outbound.db, polls inbound.db
  * for the response. Self-contained — the only agent-runner import is the
