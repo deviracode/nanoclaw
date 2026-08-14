@@ -209,8 +209,10 @@ the fork (same pattern as channels):
    `nc:append` directives.
 4. Telegram formatting skill name/path on the `channels` branch.
 5. Whether `@onecli-sh/sdk` has a non-docker (host-mode) config API.
-6. OpenCode model/router choice for `OPENCODE_MODEL` (env-time, no code
-   dependency — e.g. `openrouter/anthropic/claude-sonnet-4` or
-   `deepseek/deepseek-chat`).
+6. ~~OpenCode model/router choice for `OPENCODE_MODEL`~~ — **resolved: DeepSeek**
+   (`OPENCODE_PROVIDER=deepseek`, `OPENCODE_MODEL=deepseek/deepseek-chat`,
+   `OPENCODE_SMALL_MODEL=deepseek/deepseek-chat`,
+   `ANTHROPIC_BASE_URL=https://api.deepseek.com/v1`; DeepSeek key registered
+   in OneCLI with `--host-pattern "api.deepseek.com"`).
 7. Confirm `providers` branch file list matches the skill's copy list
    (including `mcp-to-opencode.ts`).
