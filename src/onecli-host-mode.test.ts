@@ -107,7 +107,11 @@ describe('applyOnecliConfigHostMode', () => {
 });
 
 describe('mapContainerPathToHost', () => {
-  const mountEnv = { AGENT_DIR: '/data/groups/dm-x', WORKSPACE_DIR: '/data/sess', CLAUDE_CONFIG_DIR: '/data/claude-shared' };
+  const mountEnv = {
+    AGENT_DIR: '/data/groups/dm-x',
+    WORKSPACE_DIR: '/data/sess',
+    CLAUDE_CONFIG_DIR: '/data/claude-shared',
+  };
 
   test('maps /workspace/agent paths via AGENT_DIR (longest prefix wins)', () => {
     expect(mapContainerPathToHost('/workspace/agent/.auth', mountEnv)).toBe('/data/groups/dm-x/.auth');
