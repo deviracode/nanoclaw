@@ -172,17 +172,17 @@ const mounts = [
 ];
 
 describe('translateMountsToHostEnv', () => {
-  it('maps workspace/agent/claude/src/skills mounts to env', () => {
+  it('maps workspace/agent/claude mounts to env', () => {
     const env = translateMountsToHostEnv(mounts);
     expect(env.WORKSPACE_DIR).toBe('/data/sess');
     expect(env.AGENT_DIR).toBe('/data/groups/dm-x');
-    expect(env.CLAUDE_HOME).toBe('/data/claude-shared');
-    expect(env.SRC_DIR).toBe('/app-src');
-    expect(env.SKILLS_DIR).toBe('/app-skills');
+    expect(env.CLAUDE_CONFIG_DIR).toBe('/data/claude-shared');
   });
 
-  it('nested file mounts are ignored (physical paths work in host mode)', () => {
+  it('ignores image-fixed mounts (/app/src, /app/skills) and nested file mounts', () => {
     const env = translateMountsToHostEnv(mounts);
+    expect(Object.keys(env)).not.toContain('SRC_DIR');
+    expect(Object.keys(env)).not.toContain('SKILLS_DIR');
     expect(Object.keys(env)).not.toContain('CONTAINER_JSON');
   });
 });

@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { applyOnecliConfigHostMode, rewriteProxyHost } from './onecli-host-mode.js';
+import { applyOnecliConfigHostMode, mapContainerPathToHost, rewriteProxyHost } from './onecli-host-mode.js';
 
 let dataDir: string;
 
@@ -103,5 +103,35 @@ describe('applyOnecliConfigHostMode', () => {
 
     const outEmpty = applyOnecliConfigHostMode({ ...baseConfig, credentialStubs: [] }, gatewayUrl, dataDir);
     expect(outEmpty.files).toHaveLength(1);
+  });
+});
+
+describe('mapContainerPathToHost', () => {
+  const mountEnv = { AGENT_DIR: '/data/groups/dm-x', WORKSPACE_DIR: '/data/sess', CLAUDE_CONFIG_DIR: '/data/claude-shared' };
+
+  test('maps /workspace/agent paths via AGENT_DIR (longest prefix wins)', () => {
+    expect(mapContainerPathToHost('/workspace/agent/.auth', mountEnv)).toBe('/data/groups/dm-x/.auth');
+  });
+
+  test('maps /workspace paths via WORKSPACE_DIR', () => {
+    expect(mapContainerPathToHost('/workspace/inbound.db', mountEnv)).toBe('/data/sess/inbound.db');
+  });
+
+  test('maps /home/node/.claude paths via CLAUDE_CONFIG_DIR', () => {
+    expect(mapContainerPathToHost('/home/node/.claude/settings.json', mountEnv)).toBe(
+      '/data/claude-shared/settings.json',
+    );
+  });
+
+  test('maps exact prefix matches without a trailing slash', () => {
+    expect(mapContainerPathToHost('/workspace/agent', mountEnv)).toBe('/data/groups/dm-x');
+  });
+
+  test('leaves unmapped paths unchanged (treated as host-absolute)', () => {
+    expect(mapContainerPathToHost('/etc/passwd', mountEnv)).toBe('/etc/passwd');
+  });
+
+  test('falls back to the original path when the env var is unset', () => {
+    expect(mapContainerPathToHost('/workspace/agent/.auth', {})).toBe('/workspace/agent/.auth');
   });
 });

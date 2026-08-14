@@ -95,9 +95,7 @@ export function cleanupOrphans(): void {
 const MOUNT_ENV_MAP: Record<string, string> = {
   '/workspace': 'WORKSPACE_DIR',
   '/workspace/agent': 'AGENT_DIR',
-  '/home/node/.claude': 'CLAUDE_HOME',
-  '/app/src': 'SRC_DIR',
-  '/app/skills': 'SKILLS_DIR',
+  '/home/node/.claude': 'CLAUDE_CONFIG_DIR',
 };
 
 export function translateMountsToHostEnv(mounts: VolumeMount[]): Record<string, string> {
@@ -107,15 +105,6 @@ export function translateMountsToHostEnv(mounts: VolumeMount[]): Record<string, 
     if (key) env[key] = m.hostPath;
   }
   return env;
-}
-
-export function hostRuntimeEnv(mounts: VolumeMount[], extra: Record<string, string>): NodeJS.ProcessEnv {
-  return {
-    ...translateMountsToHostEnv(mounts),
-    ...extra,
-    TZ: process.env.TZ ?? 'UTC',
-    NANOCLAW_RUNTIME: 'host',
-  };
 }
 
 export function spawnHostRunner(opts: {

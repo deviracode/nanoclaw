@@ -23,6 +23,24 @@ export interface HostModeFiles {
 
 const SYSTEM_CA_PATHS = ['/etc/ssl/certs/ca-certificates.crt', '/etc/pki/tls/certs/ca-bundle.crt'];
 
+/** Container-path prefixes the host runtime relocates via env (matches container-runtime MOUNT_ENV_MAP). */
+const CONTAINER_PREFIX_ENV: Record<string, string> = {
+  '/workspace/agent': 'AGENT_DIR',
+  '/workspace': 'WORKSPACE_DIR',
+  '/home/node/.claude': 'CLAUDE_CONFIG_DIR',
+};
+
+export function mapContainerPathToHost(containerPath: string, mountEnv: Record<string, string>): string {
+  const prefixes = Object.entries(CONTAINER_PREFIX_ENV).sort((a, b) => b[0].length - a[0].length);
+  for (const [prefix, envKey] of prefixes) {
+    if (containerPath === prefix || containerPath.startsWith(prefix + '/')) {
+      const hostBase = mountEnv[envKey];
+      if (hostBase) return path.join(hostBase, containerPath.slice(prefix.length).replace(/^\//, ''));
+    }
+  }
+  return containerPath; // unmapped — treat as host-absolute
+}
+
 function findSystemCaBundle(): string | null {
   for (const p of SYSTEM_CA_PATHS) {
     if (fs.existsSync(p)) return p;
