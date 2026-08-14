@@ -1,11 +1,13 @@
+import path from 'path';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 describe('host runtime config', () => {
   const saved = { runtime: process.env.NANOCLAW_RUNTIME, home: process.env.NANOCLAW_HOME, port: process.env.PORT };
   afterEach(() => {
-    process.env.NANOCLAW_RUNTIME = saved.runtime;
-    process.env.NANOCLAW_HOME = saved.home;
-    process.env.PORT = saved.port;
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
     vi.resetModules();
   });
 
@@ -27,6 +29,15 @@ describe('host runtime config', () => {
     expect(DATA_DIR).toBe('/data/data');
     expect(GROUPS_DIR).toBe('/data/groups');
     expect(STORE_DIR).toBe('/data/store');
+  });
+
+  test('default data dirs resolve under the project root when NANOCLAW_HOME unset', async () => {
+    delete process.env.NANOCLAW_HOME;
+    const { DATA_DIR, GROUPS_DIR, STORE_DIR } = await import('./config.js');
+    const root = process.cwd();
+    expect(DATA_DIR).toBe(path.resolve(root, 'data'));
+    expect(GROUPS_DIR).toBe(path.resolve(root, 'groups'));
+    expect(STORE_DIR).toBe(path.resolve(root, 'store'));
   });
 
   test('health port defaults to 8080', async () => {
