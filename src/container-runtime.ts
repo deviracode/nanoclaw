@@ -2,10 +2,12 @@
  * Container runtime abstraction for NanoClaw.
  * All runtime-specific logic lives here so swapping runtimes means changing one file.
  */
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
+import type { ChildProcess } from 'child_process';
 import os from 'os';
 
 import { CONTAINER_INSTALL_LABEL } from './config.js';
+import type { VolumeMount } from './providers/provider-container-registry.js';
 import { log } from './log.js';
 
 /** The container runtime binary name. */
@@ -86,5 +88,54 @@ export function cleanupOrphans(): void {
     }
   } catch (err) {
     log.warn('Failed to clean up orphaned containers', { err });
+  }
+}
+
+/** Mount containerPath → child-process env var (host runtime). */
+const MOUNT_ENV_MAP: Record<string, string> = {
+  '/workspace': 'WORKSPACE_DIR',
+  '/workspace/agent': 'AGENT_DIR',
+  '/home/node/.claude': 'CLAUDE_HOME',
+  '/app/src': 'SRC_DIR',
+  '/app/skills': 'SKILLS_DIR',
+};
+
+export function translateMountsToHostEnv(mounts: VolumeMount[]): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const m of mounts) {
+    const key = MOUNT_ENV_MAP[m.containerPath];
+    if (key) env[key] = m.hostPath;
+  }
+  return env;
+}
+
+export function hostRuntimeEnv(mounts: VolumeMount[], extra: Record<string, string>): NodeJS.ProcessEnv {
+  return {
+    ...translateMountsToHostEnv(mounts),
+    ...extra,
+    TZ: process.env.TZ ?? 'UTC',
+    NANOCLAW_RUNTIME: 'host',
+  };
+}
+
+export function spawnHostRunner(opts: {
+  bun: string;
+  entry: string;
+  env: NodeJS.ProcessEnv;
+  cwd: string;
+}): ChildProcess {
+  return spawn(opts.bun, [opts.entry], {
+    env: opts.env,
+    cwd: opts.cwd,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+export function killHostRunner(child: ChildProcess): void {
+  if (!child.pid) return;
+  try {
+    child.kill('SIGTERM');
+  } catch {
+    /* already gone */
   }
 }

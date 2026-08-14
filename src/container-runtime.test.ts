@@ -23,6 +23,7 @@ import {
   stopContainer,
   ensureContainerRuntimeRunning,
   cleanupOrphans,
+  translateMountsToHostEnv,
 } from './container-runtime.js';
 import { CONTAINER_INSTALL_LABEL } from './config.js';
 import { log } from './log.js';
@@ -156,5 +157,32 @@ describe('cleanupOrphans', () => {
       count: 2,
       names: ['nanoclaw-a-1', 'nanoclaw-b-2'],
     });
+  });
+});
+
+// --- translateMountsToHostEnv ---
+
+const mounts = [
+  { hostPath: '/data/sess', containerPath: '/workspace', readonly: false },
+  { hostPath: '/data/groups/dm-x', containerPath: '/workspace/agent', readonly: false },
+  { hostPath: '/data/claude-shared', containerPath: '/home/node/.claude', readonly: false },
+  { hostPath: '/x/container.json', containerPath: '/workspace/agent/container.json', readonly: true },
+  { hostPath: '/app-src', containerPath: '/app/src', readonly: true },
+  { hostPath: '/app-skills', containerPath: '/app/skills', readonly: true },
+];
+
+describe('translateMountsToHostEnv', () => {
+  it('maps workspace/agent/claude/src/skills mounts to env', () => {
+    const env = translateMountsToHostEnv(mounts);
+    expect(env.WORKSPACE_DIR).toBe('/data/sess');
+    expect(env.AGENT_DIR).toBe('/data/groups/dm-x');
+    expect(env.CLAUDE_HOME).toBe('/data/claude-shared');
+    expect(env.SRC_DIR).toBe('/app-src');
+    expect(env.SKILLS_DIR).toBe('/app-skills');
+  });
+
+  it('nested file mounts are ignored (physical paths work in host mode)', () => {
+    const env = translateMountsToHostEnv(mounts);
+    expect(Object.keys(env)).not.toContain('CONTAINER_JSON');
   });
 });
