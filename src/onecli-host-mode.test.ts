@@ -30,25 +30,78 @@ describe('rewriteProxyHost', () => {
 });
 
 describe('applyOnecliConfigHostMode', () => {
-  const config = {
-    env: { HTTPS_PROXY: 'http://host.docker.internal:10255', DENO_CERT: '/tmp/onecli-combined-ca.pem' },
+  const systemBundle = ['/etc/ssl/certs/ca-certificates.crt', '/etc/pki/tls/certs/ca-bundle.crt'].find((p) =>
+    fs.existsSync(p),
+  );
+
+  const baseConfig = {
+    env: { HTTPS_PROXY: 'http://host.docker.internal:10255', NO_PROXY: 'host.docker.internal,localhost,127.0.0.1' },
     caCertificate: '-----BEGIN CERTIFICATE-----\nMOCK\n-----END CERTIFICATE-----',
     caCertificateContainerPath: '/tmp/onecli-ca.pem',
   };
 
-  test('returns rewritten env, cert file, and stub files', () => {
+  const gatewayUrl = 'http://nanoclaw-onecli.railway.internal:10254';
+
+  test('combines gateway cert with system CA bundle, or falls back to NODE_EXTRA_CA_CERTS only', () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'onecli-host-mode-'));
-    const stubPath = path.join(dataDir, 'workspace', 'agent', '.auth');
+    const out = applyOnecliConfigHostMode(baseConfig, gatewayUrl, dataDir);
+
+    expect(out.env.HTTPS_PROXY).toBe('http://nanoclaw-onecli.railway.internal:10255');
+
+    const certFile = out.files.find((f) => f.hostPath.endsWith('.pem'));
+    expect(certFile).toBeTruthy();
+    const onDisk = fs.readFileSync(certFile!.hostPath, 'utf8');
+    expect(onDisk).toContain('MOCK');
+    expect(certFile!.content).toBe(onDisk);
+    expect(certFile!.containerPath).toBe('/tmp/onecli-ca.pem');
+    expect(out.env.NODE_EXTRA_CA_CERTS).toBe(certFile!.hostPath);
+
+    if (systemBundle) {
+      expect(onDisk).toContain(fs.readFileSync(systemBundle, 'utf8'));
+      expect(onDisk).toContain('-----BEGIN CERTIFICATE-----\nMOCK');
+      expect(out.env.SSL_CERT_FILE).toBe(certFile!.hostPath);
+      expect(out.env.DENO_CERT).toBe(certFile!.hostPath);
+    } else {
+      expect(out.env.SSL_CERT_FILE).toBeUndefined();
+      expect(out.env.DENO_CERT).toBeUndefined();
+    }
+  });
+
+  test('writes credential stubs under onecli-stubs with mode 0600 and both paths', () => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'onecli-host-mode-'));
     const out = applyOnecliConfigHostMode(
-      { ...config, credentialStubs: [{ containerPath: stubPath, content: 'stub-content' }] },
-      'http://nanoclaw-onecli.railway.internal:10254',
+      { ...baseConfig, credentialStubs: [{ containerPath: '/workspace/agent/.auth', content: 'stub-content' }] },
+      gatewayUrl,
       dataDir,
     );
-    expect(out.env.HTTPS_PROXY).toBe('http://nanoclaw-onecli.railway.internal:10255');
-    expect(out.files.some((f) => f.path.endsWith('.pem') && f.content.includes('MOCK'))).toBe(true);
-    expect(out.files.some((f) => f.path === stubPath && f.content === 'stub-content')).toBe(true);
-    expect(out.env.NODE_EXTRA_CA_CERTS).toBeTruthy();
-    expect(out.env.SSL_CERT_FILE).toBe(out.env.NODE_EXTRA_CA_CERTS);
-    expect(out.env.DENO_CERT).toBe(out.env.NODE_EXTRA_CA_CERTS);
+
+    const stub = out.files.find((f) => f.content === 'stub-content');
+    expect(stub).toBeTruthy();
+    expect(stub!.containerPath).toBe('/workspace/agent/.auth');
+    expect(stub!.hostPath).toBe(path.join(dataDir, 'onecli-stubs', '.auth'));
+    expect(fs.readFileSync(stub!.hostPath, 'utf8')).toBe('stub-content');
+    expect(fs.statSync(stub!.hostPath).mode & 0o777).toBe(0o600);
+  });
+
+  test('passes NO_PROXY through untouched and rewrites https proxies', () => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'onecli-host-mode-'));
+    const out = applyOnecliConfigHostMode(
+      { ...baseConfig, env: { HTTPS_PROXY: 'https://host-gateway:10255', NO_PROXY: 'host.docker.internal,localhost' } },
+      gatewayUrl,
+      dataDir,
+    );
+
+    expect(out.env.NO_PROXY).toBe('host.docker.internal,localhost');
+    expect(out.env.HTTPS_PROXY).toBe('https://nanoclaw-onecli.railway.internal:10255');
+  });
+
+  test('writes no stub files when credentialStubs is absent or empty', () => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'onecli-host-mode-'));
+    const out = applyOnecliConfigHostMode(baseConfig, gatewayUrl, dataDir);
+    expect(out.files).toHaveLength(1);
+    expect(fs.existsSync(path.join(dataDir, 'onecli-stubs'))).toBe(false);
+
+    const outEmpty = applyOnecliConfigHostMode({ ...baseConfig, credentialStubs: [] }, gatewayUrl, dataDir);
+    expect(outEmpty.files).toHaveLength(1);
   });
 });

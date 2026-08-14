@@ -16,8 +16,18 @@ export interface OnecliContainerConfig {
 }
 
 export interface HostModeFiles {
-  path: string;
+  containerPath: string; // original gateway-provided path (e.g. /workspace/agent/.auth)
+  hostPath: string; // where the file was actually written
   content: string;
+}
+
+const SYSTEM_CA_PATHS = ['/etc/ssl/certs/ca-certificates.crt', '/etc/pki/tls/certs/ca-bundle.crt'];
+
+function findSystemCaBundle(): string | null {
+  for (const p of SYSTEM_CA_PATHS) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
 }
 
 export function rewriteProxyHost(proxyUrl: string, oncliUrl: string): string {
@@ -42,26 +52,33 @@ export function applyOnecliConfigHostMode(
   const files: HostModeFiles[] = [];
 
   for (const [key, value] of Object.entries(config.env)) {
-    env[key] = key.toLowerCase().includes('proxy') ? rewriteProxyHost(value, oncliUrl) : value;
+    const isProxyUrl = key.toLowerCase().includes('proxy') && key.toLowerCase() !== 'no_proxy';
+    env[key] = isProxyUrl ? rewriteProxyHost(value, oncliUrl) : value;
   }
 
   const certsDir = path.join(dataDir, 'onecli-certs');
   fs.mkdirSync(certsDir, { recursive: true });
-  const certFile = path.join(
-    certsDir,
-    `ca-${crypto.createHash('sha1').update(config.caCertificate).digest('hex').slice(0, 12)}.pem`,
-  );
-  fs.writeFileSync(certFile, config.caCertificate);
-  files.push({ path: certFile, content: config.caCertificate });
+  const hash = crypto.createHash('sha1').update(config.caCertificate).digest('hex').slice(0, 12);
+  const combinedFile = path.join(certsDir, `ca-combined-${hash}.pem`);
 
-  env.NODE_EXTRA_CA_CERTS = certFile;
-  env.SSL_CERT_FILE = certFile;
-  env.DENO_CERT = certFile;
+  const systemBundle = findSystemCaBundle();
+  const combined = systemBundle
+    ? `${fs.readFileSync(systemBundle, 'utf8')}\n${config.caCertificate}`
+    : config.caCertificate;
+  fs.writeFileSync(combinedFile, combined);
+  files.push({ containerPath: config.caCertificateContainerPath, hostPath: combinedFile, content: combined });
+
+  env.NODE_EXTRA_CA_CERTS = combinedFile;
+  if (systemBundle) {
+    env.SSL_CERT_FILE = combinedFile;
+    env.DENO_CERT = combinedFile;
+  }
 
   for (const stub of config.credentialStubs ?? []) {
-    fs.mkdirSync(path.dirname(stub.containerPath), { recursive: true });
-    fs.writeFileSync(stub.containerPath, stub.content);
-    files.push({ path: stub.containerPath, content: stub.content });
+    const hostPath = path.join(dataDir, 'onecli-stubs', path.basename(stub.containerPath));
+    fs.mkdirSync(path.dirname(hostPath), { recursive: true });
+    fs.writeFileSync(hostPath, stub.content, { mode: 0o600 });
+    files.push({ containerPath: stub.containerPath, hostPath, content: stub.content });
   }
 
   return { env, files };
