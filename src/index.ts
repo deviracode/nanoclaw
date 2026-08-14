@@ -7,7 +7,8 @@
 import path from 'path';
 
 import { backfillContainerConfigs } from './backfill-container-configs.js';
-import { DATA_DIR } from './config.js';
+import { DATA_DIR, HEALTH_PORT, IS_HOST_RUNTIME } from './config.js';
+import { startHealthServer } from './health.js';
 import { enforceStartupBackoff, resetCircuitBreaker } from './circuit-breaker.js';
 import { initDb } from './db/connection.js';
 import { runMigrations } from './db/migrations/index.js';
@@ -78,9 +79,16 @@ async function main(): Promise<void> {
   // Idempotent — skips groups that already have a config row.
   backfillContainerConfigs();
 
-  // 2. Container runtime
-  ensureContainerRuntimeRunning();
-  cleanupOrphans();
+  // 1c. Health endpoint (host runtime only — Railway healthchecks)
+  if (IS_HOST_RUNTIME) {
+    startHealthServer(HEALTH_PORT);
+  }
+
+  // 2. Container runtime — docker-only; host runtime (Railway) has no daemon.
+  if (!IS_HOST_RUNTIME) {
+    ensureContainerRuntimeRunning();
+    cleanupOrphans();
+  }
 
   // 3. Channel adapters
   await initChannelAdapters((adapter: ChannelAdapter): ChannelSetup => {
