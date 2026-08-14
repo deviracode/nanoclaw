@@ -179,7 +179,10 @@ describe('relocateCredentialFiles', () => {
   });
 
   test('skips files with no containerPath', () => {
-    const out = relocateCredentialFiles([{ containerPath: '', hostPath: path.join(dataDir, 'x.pem'), content: 'x' }], mountEnv);
+    const out = relocateCredentialFiles(
+      [{ containerPath: '', hostPath: path.join(dataDir, 'x.pem'), content: 'x' }],
+      mountEnv,
+    );
 
     expect(out.skipped).toEqual([path.join(dataDir, 'x.pem')]);
     expect(out.relocated).toEqual([]);

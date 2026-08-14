@@ -49,10 +49,7 @@ export interface RelocateResult {
  * containerPath doesn't map to a relocated prefix (e.g. the CA entry,
  * served via env vars) are skipped, never written to literal host paths.
  */
-export function relocateCredentialFiles(
-  files: HostModeFiles[],
-  mountEnv: Record<string, string>,
-): RelocateResult {
+export function relocateCredentialFiles(files: HostModeFiles[], mountEnv: Record<string, string>): RelocateResult {
   const result: RelocateResult = { relocated: [], skipped: [] };
   for (const file of files) {
     if (!file.containerPath) {
