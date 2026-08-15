@@ -1165,6 +1165,12 @@ git commit -m "feat(provider): OpenCode provider from upstream/providers (SDK+CL
 
 ### Task 11: `railway/Dockerfile.railway` + entrypoint
 
+**Deviations recorded during execution (commit 4c6addf5):**
+- `agent-deps` stage apt list needs `unzip` (the Bun installer hard-requires it — the agent image gets it via its apt list; the plan's staged list omitted it).
+- Runner deps go to `/app/src/node_modules` (NOT merged into `/app/node_modules`) — the merge fails because both trees carry top-level `@types/node` (pnpm symlink vs bun real dir). `/app/src/node_modules` resolves first for all `/app/src/**` imports.
+- **Upgrade tripwire:** `enforceUpgradeTripwire()` refuses to boot when `data/upgrade-state.json` is missing — a fresh Railway volume has none. The entrypoint must stamp the marker with the running image version (`via: 'railway'`) before exec'ing the host. See Task 12's entrypoint edit.
+- Smoke test: host boots clean, `/healthz` → `ok`, channel imports resolve, opencode provider loads.
+
 **Files:**
 - Create: `railway/Dockerfile.railway`
 - Create: `railway/entrypoint.sh`
