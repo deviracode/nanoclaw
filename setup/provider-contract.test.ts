@@ -53,10 +53,11 @@ describe('setup carries the picked provider to creation via a setup-run env var'
   // truth materialized into container.json (agent_provider is deprecated) — before
   // the welcome wakes the container, falling back to the instance default
   // (DEFAULT_AGENT_PROVIDER) when the env var is unset. No `--provider` flag in
-  // the contract (above). init-first-agent stamps directly via
-  // ensureContainerConfig; init-cli-agent threads it through initGroupFilesystem.
+  // the contract (above). The shared DM wiring stamps directly via
+  // ensureContainerConfig (used by init-first-agent and the host-runtime
+  // bootstrap); init-cli-agent threads it through initGroupFilesystem.
   const applyPattern: Record<string, RegExp> = {
-    'scripts/init-first-agent.ts': /ensureContainerConfig\([^)]*pickedProvider/,
+    'src/modules/bootstrap/wire-dm-agent.ts': /ensureContainerConfig\([^)]*pickedProvider/,
     'scripts/init-cli-agent.ts': /provider:\s*pickedProvider/,
   };
   for (const [file, pattern] of Object.entries(applyPattern)) {
@@ -69,11 +70,11 @@ describe('setup carries the picked provider to creation via a setup-run env var'
 });
 
 describe('bootstrap can restore missing provider-neutral persona files', () => {
-  for (const file of ['scripts/init-first-agent.ts', 'scripts/init-cli-agent.ts']) {
+  for (const file of ['src/modules/bootstrap/wire-dm-agent.ts', 'scripts/init-cli-agent.ts']) {
     it(`${file} attempts create-only persona staging when reusing a group`, () => {
       const src = read(file);
       expect(src).not.toContain('createdGroup');
-      expect(src).toContain(file.includes('first') ? 'stageGroupPersona(' : 'initGroupFilesystem(ag, {');
+      expect(src).toContain(file.includes('bootstrap') ? 'stageGroupPersona(' : 'initGroupFilesystem(ag, {');
     });
   }
 });

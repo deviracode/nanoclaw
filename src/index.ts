@@ -7,6 +7,7 @@
 import path from 'path';
 
 import { backfillContainerConfigs } from './backfill-container-configs.js';
+import { runBootstrap } from './bootstrap.js';
 import { DATA_DIR, HEALTH_PORT, IS_HOST_RUNTIME } from './config.js';
 import { startHealthServer } from './health.js';
 import { enforceStartupBackoff, resetCircuitBreaker } from './circuit-breaker.js';
@@ -165,6 +166,27 @@ async function main(): Promise<void> {
 
   // 7. Start the `ncl` CLI socket server (data/ncl.sock).
   await startCliServer();
+
+  // 7b. First-run bootstrap (host runtime: no local shell to run init-first-agent).
+  if (IS_HOST_RUNTIME && process.env.NANOCLAW_BOOTSTRAP === '1') {
+    try {
+      const seeded = await runBootstrap({
+        db,
+        ownerId: process.env.NANOCLAW_OWNER_ID || '',
+        displayName: process.env.NANOCLAW_OWNER_DISPLAY_NAME,
+        agentName: process.env.NANOCLAW_AGENT_NAME,
+        channels: (process.env.NANOCLAW_BOOTSTRAP_CHANNELS || '')
+          .split(',')
+          .filter(Boolean)
+          .map((c) => ({ channel: c.trim(), platformId: `${c.trim()}:${process.env.NANOCLAW_OWNER_HANDLE || ''}` })),
+        provider: process.env.NANOCLAW_PICKED_PROVIDER || 'opencode',
+        welcome: process.env.NANOCLAW_BOOTSTRAP_WELCOME,
+      });
+      log.info('Bootstrap run', { seeded });
+    } catch (err) {
+      log.error('Bootstrap failed — continuing without it', { err });
+    }
+  }
 
   log.info('NanoClaw running');
 }
