@@ -1072,6 +1072,13 @@ git commit -m "feat(channels): WhatsApp + Telegram adapters from upstream/channe
 
 ### Task 10: OpenCode provider from `upstream/providers`
 
+**Deviations recorded during execution (commits ab996324, 5f95fd03):**
+- `container/agent-runner/src/providers/cwd-shim.ts` also copied (byte-identical) — `mcp-to-opencode.ts` imports it.
+- `container/agent-runner/src/providers/types.ts` hand-edited to upstream's richer `McpServerConfig` union (fork's was narrower; purely additive, claude provider unaffected).
+- `src/opencode-dockerfile.test.ts` was **fork-adapted**: this fork installs global CLIs via `container/cli-tools.json` (data-driven), not the upstream per-CLI `ARG OPENCODE_VERSION` + `pnpm install -g` pattern. The adapted test asserts the manifest pins `opencode-ai` exactly `1.4.17` (never `latest`) and that `container/Dockerfile` runs `sh /tmp/install-cli-tools.sh /tmp/cli-tools.json`.
+- New `src/opencode-dockerfile-railway.test.ts` — `describe.runIf`-guarded assertion that `railway/Dockerfile.railway` will contain the same cli-tools install invocation. **Task 11 MUST include `COPY container/cli-tools.json container/install-cli-tools.sh /tmp/` + `sh /tmp/install-cli-tools.sh /tmp/cli-tools.json`, or this guard goes red.**
+- `/update-skills` re-runs of the bundled `add-opencode` skill will clobber the fork-adapted guard and re-add a dead ARG + duplicate install — a fork-local deviation note was added to `.agents/skills/add-opencode/SKILL.md`.
+
 **Files:**
 - Create: `src/providers/opencode.ts`, `src/providers/opencode-registration.test.ts`
 - Create: `container/agent-runner/src/providers/opencode.ts`, `mcp-to-opencode.ts`, `mcp-to-opencode.test.ts`, `opencode.factory.test.ts`, `opencode-registration.test.ts`
