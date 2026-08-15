@@ -50,6 +50,36 @@ describe('runBootstrap', () => {
     const { getUserRoles } = await import('./modules/permissions/db/user-roles.js');
     const roles = getUserRoles('telegram:12345');
     expect(roles.some((r) => r.role === 'owner' && r.agent_group_id === null)).toBe(true);
+    const cfg = db.prepare('SELECT provider, cli_scope FROM container_configs').get() as {
+      provider: string | null;
+      cli_scope: string;
+    };
+    expect(cfg.provider).toBe('opencode');
+    expect(cfg.cli_scope).toBe('global');
+    const { closeDb } = await import('./db/connection.js');
+    closeDb();
+  });
+
+  test('empty ownerId skips provisioning', async () => {
+    const db = await freshDb();
+    const { runBootstrap } = await import('./bootstrap.js');
+    await expect(runBootstrap({ db, ownerId: '', channels: [] })).resolves.toBe(false);
+    await expect(runBootstrap({ db, ownerId: '  ,  ', channels: [] })).resolves.toBe(false);
+    const users = db.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number };
+    expect(users.c).toBe(0);
+    const { closeDb } = await import('./db/connection.js');
+    closeDb();
+  });
+
+  test('malformed ownerId entries are skipped', async () => {
+    const db = await freshDb();
+    const { runBootstrap } = await import('./bootstrap.js');
+    // 'no-colon-here' and ':12345' are invalid; 'telegram:12345' still wires.
+    await expect(runBootstrap({ db, ownerId: 'no-colon-here,:12345,telegram:12345', channels: [] })).resolves.toBe(
+      true,
+    );
+    const ids = db.prepare('SELECT id FROM users').all() as { id: string }[];
+    expect(ids.map((u) => u.id)).toEqual(['telegram:12345']);
     const { closeDb } = await import('./db/connection.js');
     closeDb();
   });

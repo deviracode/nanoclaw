@@ -11,8 +11,12 @@
  * provided channels list (falling back to the entry itself), and hands the
  * welcome DM to the running service via the CLI socket (non-fatal on
  * failure — the socket may not be up yet at first boot).
+ *
+ * Empty or malformed ownerId entries are skipped with a warning and never
+ * report success — a no-shell deploy must not log "seeded" while nothing
+ * was wired.
  */
-import type Database from 'better-sqlite3';
+import type { Database } from 'better-sqlite3';
 
 import { log } from './log.js';
 import { DEFAULT_WELCOME, sendWelcomeViaCliSocket, wireDmAgent } from './modules/bootstrap/wire-dm-agent.js';
@@ -25,7 +29,7 @@ export interface BootstrapChannel {
 
 export interface BootstrapOpts {
   /** The opened central DB — used only to check "any users exist". */
-  db: unknown;
+  db: Database;
   /** "channel:handle" or comma-separated list of them. */
   ownerId: string;
   displayName?: string;
@@ -36,17 +40,33 @@ export interface BootstrapOpts {
 }
 
 export async function runBootstrap(opts: BootstrapOpts): Promise<boolean> {
-  const count = (opts.db as Database.Database).prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number };
+  const count = opts.db.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number };
   if (count.c > 0) return false;
 
-  let first: { result: WireDmAgentResult; displayName: string } | undefined;
-  for (const entry of opts.ownerId
+  const entries = opts.ownerId
     .split(',')
     .map((e) => e.trim())
-    .filter(Boolean)) {
-    const channel = entry.split(':')[0];
+    .filter(Boolean);
+  if (entries.length === 0) {
+    log.warn('Bootstrap: NANOCLAW_OWNER_ID empty — skipping provisioning');
+    return false;
+  }
+
+  let first: { result: WireDmAgentResult; displayName: string } | undefined;
+  for (const entry of entries) {
+    const sep = entry.indexOf(':');
+    const channel = sep > 0 ? entry.slice(0, sep) : '';
+    const handle = sep >= 0 ? entry.slice(sep + 1) : '';
+    if (!channel || !handle) {
+      log.warn('Bootstrap: skipping malformed ownerId entry (expected channel:handle)', { entry });
+      continue;
+    }
+    if (opts.channels.length > 0 && !opts.channels.some((c) => c.channel === channel)) {
+      log.warn('Bootstrap: skipping ownerId entry — channel not in NANOCLAW_BOOTSTRAP_CHANNELS', { channel });
+      continue;
+    }
     const match = opts.channels.find((c) => c.channel === channel);
-    const displayName = opts.displayName?.trim() || entry;
+    const displayName = opts.displayName?.trim() || handle;
     const result = wireDmAgent({
       channel,
       userId: entry,
@@ -59,19 +79,20 @@ export async function runBootstrap(opts: BootstrapOpts): Promise<boolean> {
     if (!first) first = { result, displayName };
   }
 
+  // Nothing was wired (all entries skipped) — must not report success.
+  if (!first) return false;
+
   // Welcome goes through the CLI socket (in-process, it is listening since
   // initChannelAdapters). Non-fatal: at first boot the socket may not be up
   // yet, and the agent can still be reached directly by the operator.
-  if (first) {
-    const welcome = opts.welcome?.trim() || DEFAULT_WELCOME;
-    try {
-      await sendWelcomeViaCliSocket(first.result.messagingGroup, welcome, {
-        senderId: first.result.userId,
-        sender: first.displayName,
-      });
-    } catch (err) {
-      log.warn('Bootstrap welcome send failed — continuing without it', { err });
-    }
+  const welcome = opts.welcome?.trim() || DEFAULT_WELCOME;
+  try {
+    await sendWelcomeViaCliSocket(first.result.messagingGroup, welcome, {
+      senderId: first.result.userId,
+      sender: first.displayName,
+    });
+  } catch (err) {
+    log.warn('Bootstrap welcome send failed — continuing without it', { err });
   }
   return true;
 }
