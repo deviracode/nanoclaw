@@ -1010,6 +1010,10 @@ git show upstream/channels:container/skills/whatsapp-formatting/instructions.md 
 
 - [ ] **Step 3: Copy Telegram adapter files**
 
+**Deviations recorded during execution (Task 9, commit 0443a283):**
+- `setup/pair-telegram.ts` was NOT copied — this fork maintains it in trunk with newer UX (commits 1a3c3eaf, 3b411710); the fork's `/add-telegram` skill states it is trunk-maintained and not copied. `setup/index.ts` already registers it.
+- **Known-vulnerable pin:** `@whiskeysockets/baileys@7.0.0-rc.9` is deprecated on npm (GHSA-qvv5-jq5g-4cgg, message spoofing). It is upstream/channels' pin and the adapter is built against it — the fix must ride in from upstream/channels when it bumps. **Follow-up: smoke-test WhatsApp on Railway staging before production use; track upstream baileys bump via `/update-skills`.**
+
 Run:
 ```bash
 git show upstream/channels:src/channels/telegram.ts                        > src/channels/telegram.ts
