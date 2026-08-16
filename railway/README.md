@@ -22,7 +22,7 @@ railway/entrypoint.sh # volume dirs + upgrade-marker stamp, then exec host
 |---|---|---|---|
 | `nanoclaw` | `railway/Dockerfile.railway` (this repo, `main` branch) | Node host + Bun agent-runner + Chromium, OpenCode/DeepSeek agent, WhatsApp (Baileys) + Telegram channels | ❌ default — only if you want the health endpoint exposed |
 | `nanoclaw-onecli` | `ghcr.io/onecli/onecli:latest` (official image) | OneCLI gateway + web UI (ports 10254/10255) | ❌ **no — private network only** |
-| `nanoclaw-db` | Railway-hosted Postgres | The central DB (`v2.db` lives in Postgres; session DBs are SQLite files under the host's volume) | ❌ internal only |
+| `nanoclaw-db` | Railway-hosted Postgres | OneCLI gateway DB only — the host's central DB is SQLite at `/data/data/v2.db` (session DBs are SQLite files under the host's volume too) | ❌ internal only |
 
 The host reaches the gateway over the **private network** via reference
 variables (`${{nanoclaw-onecli.RAILWAY_PRIVATE_DOMAIN}}`). The gateway's
@@ -89,8 +89,8 @@ railway variable set --service nanoclaw-onecli --skip-deploys "KEY=value"
 | `OPENCODE_SMALL_MODEL` | `deepseek/deepseek-chat` |
 | `ANTHROPIC_BASE_URL` | `https://api.deepseek.com/v1` |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token |
-| `WHATSAPP_PHONE` | WhatsApp phone number (pairing) |
-| `WHATSAPP_PAIRING_CODE` | WhatsApp pairing code |
+| `WHATSAPP_PHONE_NUMBER` | WhatsApp phone number (pairing) |
+| `WHATSAPP_ENABLED` | `true` — bring the WhatsApp adapter up (it auto-starts when the phone number is set; set this to force it) |
 | `TZ` | install timezone, e.g. `Asia/Jerusalem` |
 | `ONECLI_API_KEY` | OneCLI API key (see step 6) |
 
@@ -157,7 +157,8 @@ onecli --api-key <ONECLI_API_KEY> --help     # use the URL http://127.0.0.1:1025
 
 ### 7. WhatsApp pairing
 
-Baileys pairing is QR-less on this setup — read the pairing code from the host
+Baileys pairing is QR-less on this setup — set `WHATSAPP_PHONE_NUMBER` (your
+phone number) so the adapter comes up, then read the pairing code from the host
 logs:
 
 ```bash

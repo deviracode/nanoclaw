@@ -258,7 +258,11 @@ async function spawnContainerHost(session: Session, agentGroup: AgentGroup): Pro
   const extraEnv: Record<string, string> = {};
   for (const [key, value] of Object.entries(contribution.env ?? {})) extraEnv[key] = value;
   extraEnv.TZ = containerConfig.timezone ?? TIMEZONE;
-  extraEnv.HOME = mountEnv.CLAUDE_CONFIG_DIR ?? process.env.HOME ?? '/root';
+  // HOME points at the group dir (not the claude config dir): CLAUDE_CONFIG_DIR
+  // already directs the Claude SDK, and HOME routes generic tools' dotfiles
+  // per-group so e.g. upload-trace's ~/.claude/projects stays out of the shared
+  // claude dir.
+  extraEnv.HOME = mountEnv.AGENT_DIR ?? process.env.HOME ?? '/root';
 
   // OneCLI gateway — same semantics as the docker path: unreachable = refuse to spawn.
   const agentIdentifier = agentGroup.id;
@@ -286,10 +290,17 @@ async function spawnContainerHost(session: Session, agentGroup: AgentGroup): Pro
     });
   }
 
+  // Child env: process.env minus secrets (docker mode passes only explicit
+  // vars — the host mode spread must not leak API keys), then provider env,
+  // then mount-derived physical host paths (WORKSPACE_DIR/AGENT_DIR/
+  // CLAUDE_CONFIG_DIR/XDG_DATA_HOME) win over any provider/env default.
+  const SECRET_ENV_KEYS = ['ONECLI_API_KEY', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'];
+  const filteredProcessEnv: NodeJS.ProcessEnv = { ...process.env };
+  for (const k of SECRET_ENV_KEYS) delete filteredProcessEnv[k];
   const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    ...mountEnv,
+    ...filteredProcessEnv,
     ...extraEnv,
+    ...mountEnv,
     NANOCLAW_RUNTIME: 'host',
   };
 

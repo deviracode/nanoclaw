@@ -126,6 +126,23 @@ describe('runBootstrap', () => {
     closeDb();
   });
 
+  test('empty per-channel platformId falls back to the ownerId entry', async () => {
+    const db = await freshDb();
+    const { runBootstrap } = await import('./bootstrap.js');
+    const seeded = await runBootstrap({
+      db,
+      ownerId: 'telegram:12345',
+      displayName: 'Alice',
+      channels: [{ channel: 'telegram', platformId: '' }],
+    });
+    expect(seeded).toBe(true);
+
+    const { getMessagingGroupByPlatform } = await import('./db/messaging-groups.js');
+    expect(getMessagingGroupByPlatform('telegram', 'telegram:12345')).toBeTruthy();
+    const { closeDb } = await import('./db/connection.js');
+    closeDb();
+  });
+
   test('welcome send failure is swallowed', async () => {
     const db = await freshDb();
     const { runBootstrap } = await import('./bootstrap.js');

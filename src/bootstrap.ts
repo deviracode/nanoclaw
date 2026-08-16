@@ -24,7 +24,8 @@ import type { WireDmAgentResult } from './modules/bootstrap/wire-dm-agent.js';
 
 export interface BootstrapChannel {
   channel: string;
-  platformId: string;
+  /** Optional explicit platform id; empty/missing falls back to the ownerId entry. */
+  platformId?: string;
 }
 
 export interface BootstrapOpts {
@@ -67,10 +68,16 @@ export async function runBootstrap(opts: BootstrapOpts): Promise<boolean> {
     }
     const match = opts.channels.find((c) => c.channel === channel);
     const displayName = opts.displayName?.trim() || handle;
+    // The explicit per-channel platformId is only used when it is a real
+    // value (non-empty, contains ':') — an empty/placeholder entry (e.g.
+    // from bootstrap channels without a handle) falls back to the
+    // channel:handle entry itself.
+    const explicitPlatformId = match?.platformId;
+    const platformId = explicitPlatformId && explicitPlatformId.includes(':') ? explicitPlatformId : entry;
     const result = wireDmAgent({
       channel,
       userId: entry,
-      platformId: match ? match.platformId : entry,
+      platformId,
       displayName,
       agentName: opts.agentName,
       role: 'owner',

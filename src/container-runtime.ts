@@ -96,6 +96,7 @@ export const MOUNT_ENV_MAP: Record<string, string> = {
   '/workspace': 'WORKSPACE_DIR',
   '/workspace/agent': 'AGENT_DIR',
   '/home/node/.claude': 'CLAUDE_CONFIG_DIR',
+  '/opencode-xdg': 'XDG_DATA_HOME',
 };
 
 export function translateMountsToHostEnv(mounts: VolumeMount[]): Record<string, string> {

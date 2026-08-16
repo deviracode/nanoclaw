@@ -1422,6 +1422,17 @@ git add .railway/railway.ts railway.json railway/README.md package.json pnpm-loc
 git commit -m "feat(railway): IaC config, root railway.json, ops runbook"
 ```
 
+**Deviations recorded after final review:**
+
+- **Task 12:** OneCLI image digest pinned (`@sha256:d0177...`), entrypoint upgrade-stamp (`via: 'railway'`, stamped from the image's own package.json so rollbacks pass the tripwire), `EXPOSE 8080` in `railway/Dockerfile.railway`.
+- **Critical 1 (channels env):** `src/env.ts` is now fork-local — `readEnvFile` falls back to `process.env` per key when the `.env` file is absent or lacks a value (Railway has no `.env`; env arrives via the platform). File wins, process.env is the fallback. Docker/local behavior unchanged (`.env` present → file wins). New `src/env.test.ts` covers both paths.
+- **Critical 2 (WhatsApp env names):** `.railway/railway.ts` + `railway/README.md` now preserve `WHATSAPP_PHONE_NUMBER` / `WHATSAPP_ENABLED` (the names `src/channels/whatsapp.ts` actually reads) instead of the dead `WHATSAPP_PHONE` / `WHATSAPP_PAIRING_CODE`.
+- **Important 3 (bootstrap platformId):** `src/index.ts` no longer builds `platformId` from the unset `NANOCLAW_OWNER_HANDLE` (that produced `"telegram:"`, which beat the entry fallback); channels map to `{ channel }` only. `src/bootstrap.ts` uses the explicit per-channel platformId only when non-empty AND contains `:`, else falls back to the `channel:handle` entry. Regression test added in `src/bootstrap.test.ts`.
+- **Important 4 (opencode agent paths):** `container/agent-runner/src/providers/opencode.ts` interpolates `AGENT_DIR` (from `paths.ts`) in the `.claude-fragments` / `CLAUDE.local.md` instruction paths — upstream's literal `/workspace/agent` never exists in host-runtime sessions (AGENT_DIR is a `/data/...` path). Deviation comment added at the edit site.
+- **Important 5 (XDG_DATA_HOME translation):** `'/opencode-xdg': 'XDG_DATA_HOME'` added to `MOUNT_ENV_MAP` (`src/container-runtime.ts`, + test case); `spawnContainerHost` env assembly flipped so mount-derived physical paths win over provider env (`{ ...process.env, ...extraEnv, ...mountEnv, NANOCLAW_RUNTIME: 'host' }`).
+- **Minors 6-7 (HOME + secret filtering):** `extraEnv.HOME` now points at `mountEnv.AGENT_DIR` (group dir) instead of `CLAUDE_CONFIG_DIR`; child env strips `ONECLI_API_KEY` / `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_OAUTH_TOKEN` from the `...process.env` spread.
+- **Expanded fork-local merge surface:** `src/env.ts`, `src/index.ts`, `container/agent-runner/src/providers/opencode.ts`, `src/providers/opencode.ts` (already fork-local: `src/container-runner.ts`, `src/container-runtime.ts`, `src/config.ts`, agent-runner path defaults, `package.json` deps, barrel imports).
+
 ---
 
 ## Phase 5 — Deploy runbook (manual, user-executed)

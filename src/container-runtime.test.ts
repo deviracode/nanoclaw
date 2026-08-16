@@ -185,4 +185,11 @@ describe('translateMountsToHostEnv', () => {
     expect(Object.keys(env)).not.toContain('SKILLS_DIR');
     expect(Object.keys(env)).not.toContain('CONTAINER_JSON');
   });
+
+  it('maps /opencode-xdg to XDG_DATA_HOME', () => {
+    const env = translateMountsToHostEnv([
+      { hostPath: '/data/groups/dm-x/opencode-xdg', containerPath: '/opencode-xdg', readonly: false },
+    ]);
+    expect(env.XDG_DATA_HOME).toBe('/data/groups/dm-x/opencode-xdg');
+  });
 });

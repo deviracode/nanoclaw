@@ -14,6 +14,11 @@ import { registerProvider } from './provider-registry.js';
 import type { AgentProvider, AgentQuery, ProviderEvent, ProviderOptions, QueryInput } from './types.js';
 import { mcpServersToOpenCodeConfig } from './mcp-to-opencode.js';
 import { getAllDestinations } from '../destinations.js';
+// Fork deviation: upstream/providers is byte-identical except for this import
+// + the AGENT_DIR interpolation below — the docker-mode hardcoded
+// /workspace/agent path does not exist in host-runtime (Railway) sessions,
+// where AGENT_DIR is a /data/... path. See buildOpenCodeConfig instructions.
+import { AGENT_DIR } from '../paths.js';
 
 function log(msg: string): void {
   console.error(`[opencode-provider] ${msg}`);
@@ -322,10 +327,14 @@ export function buildOpenCodeConfig(options: ProviderOptions): Record<string, un
   // unrendered) on every request instead of following the shared
   // startup/clear/compact lifecycle. Memory is delivered by the registered
   // memory session hook instead — see createMemoryLifecycle below.
+  // Fork deviation (host-runtime path relocation): the two agent-fragment
+  // paths below interpolate AGENT_DIR instead of the upstream literal
+  // `/workspace/agent` — AGENT_DIR resolves to `/workspace/agent` in docker
+  // mode (paths.ts default) and to a /data/... group dir in host mode.
   const instructions = [
     '/app/CLAUDE.md',
-    '/workspace/agent/.claude-fragments/*.md',
-    '/workspace/agent/CLAUDE.local.md',
+    `${AGENT_DIR}/.claude-fragments/*.md`,
+    `${AGENT_DIR}/CLAUDE.local.md`,
   ];
 
   return {

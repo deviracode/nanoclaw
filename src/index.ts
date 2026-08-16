@@ -178,7 +178,7 @@ async function main(): Promise<void> {
         channels: (process.env.NANOCLAW_BOOTSTRAP_CHANNELS || '')
           .split(',')
           .filter(Boolean)
-          .map((c) => ({ channel: c.trim(), platformId: `${c.trim()}:${process.env.NANOCLAW_OWNER_HANDLE || ''}` })),
+          .map((c) => ({ channel: c.trim() })),
         provider: process.env.NANOCLAW_PICKED_PROVIDER || 'opencode',
         welcome: process.env.NANOCLAW_BOOTSTRAP_WELCOME,
       });
