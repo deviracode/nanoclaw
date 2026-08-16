@@ -33,10 +33,15 @@ variables (`${{nanoclaw-onecli.RAILWAY_PRIVATE_DOMAIN}}`). The gateway's
 
 ## Prerequisites
 
-- Railway CLI: `brew install railway` (or `railway upgrade --yes`)
+- Railway CLI: `brew install railway` (or `railway upgrade --yes`) — this is
+  the real CLI; it ships its own bundled SDK
 - `railway login` from the repo root; verify with `railway whoami`
-- The IaC runner ships as the `railway` devDependency (pinned `railway@3.8.1`)
-  — `pnpm install` once after cloning, then `pnpm railway ...` works
+- The `railway` devDependency (pinned `railway@3.8.1`) is **not** the CLI — its
+  only binary is `railway-iac-ts`, the IaC runner that `pnpm railway config
+  plan/apply` invoke. It has no `railway` bin, so `pnpm install` alone does not
+  give you a working `railway` command. Install the CLI via brew first, then
+  use `pnpm railway ...` for IaC commands (the npm package comes from
+  `pnpm install`).
 
 ---
 
@@ -169,6 +174,21 @@ railway logs --service nanoclaw          # should show host boot + channels up
 
 Telegram DM → welcome message → DeepSeek-backed reply (any provider you
 configured). Check `railway logs --service nanoclaw` for the routing chain.
+
+---
+
+## Rollback
+
+Reverting a bad deploy is a git revert: revert the commit and push — Railway
+redeploys both services from `main`, restoring the previous state. For a
+faster revert without touching git history, redeploy the last known-good image
+digest via the Railway dashboard (Deployments → open the known-good deploy →
+Redeploy).
+
+Rollbacks always pass the upgrade tripwire: the entrypoint stamps the upgrade
+marker (`data/upgrade-state.json`, `via: "railway"`) from the image's own
+`package.json` at boot, so every deployed image — new or reverted — carries a
+matching marker by construction.
 
 ---
 

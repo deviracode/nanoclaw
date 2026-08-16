@@ -112,6 +112,8 @@ COPY container/CLAUDE.md /app/CLAUDE.md
 
 # Data volume + entrypoint
 RUN mkdir -p /data
+# Host health endpoint (GET /healthz) — Railway's healthcheckPath probes this
+EXPOSE 8080
 COPY railway/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

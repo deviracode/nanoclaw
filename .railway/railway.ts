@@ -4,7 +4,7 @@ export default defineRailway((ctx) => {
   const db = postgres("nanoclaw-db");
 
   const gateway = service("nanoclaw-onecli", {
-    source: image("ghcr.io/onecli/onecli:latest"), // pin a digest after first deploy (see README)
+    source: image("ghcr.io/onecli/onecli@sha256:d0177458b1f9ecece4abbe9abb6c5f925475357c1734f50a675d83a2ef9c8687"), // re-pin via: docker buildx imagetools inspect ghcr.io/onecli/onecli:latest
     deploy: { numReplicas: 1, restartPolicyType: "ON_FAILURE", restartPolicyMaxRetries: 10 },
     env: {
       DATABASE_URL: "${{nanoclaw-db.DATABASE_URL}}",
