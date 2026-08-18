@@ -78,7 +78,9 @@ export function sharedClaudeMd(): string {
   return IS_HOST_RUNTIME ? '/app/CLAUDE.md' : path.resolve(process.cwd(), 'container', 'CLAUDE.md');
 }
 export function sharedMcpToolsDir(): string {
-  return IS_HOST_RUNTIME ? '/app/src/mcp-tools' : path.resolve(process.cwd(), 'container', 'agent-runner', 'src', 'mcp-tools');
+  return IS_HOST_RUNTIME
+    ? '/app/src/mcp-tools'
+    : path.resolve(process.cwd(), 'container', 'agent-runner', 'src', 'mcp-tools');
 }
 // Local agent-template library. Committed but ships empty (+ README). Resolved
 // once at load. Override to another LOCAL path via NANOCLAW_TEMPLATES_DIR; never
