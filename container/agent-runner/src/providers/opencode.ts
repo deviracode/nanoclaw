@@ -52,7 +52,13 @@ function killProcessTree(proc: ChildProcess): void {
 function spawnOpencodeServer(config: Record<string, unknown>, timeoutMs = 10_000): Promise<{ url: string; proc: ChildProcess }> {
   return new Promise((resolve, reject) => {
     const hostname = '127.0.0.1';
-    const port = 4096;
+    // Fork deviation (host runtime): port 0 = OS-assigned ephemeral port.
+    // Docker mode gave every session its own container, so the fixed 4096
+    // never collided; host mode shares one network namespace, where a fixed
+    // port collides across concurrent sessions and with orphaned servers
+    // from killed runners. The server prints the bound port in its
+    // "listening on" line, which the resolver below parses.
+    const port = 0;
     const proc = spawn('opencode', ['serve', `--hostname=${hostname}`, `--port=${port}`], {
       env: {
         ...process.env,
@@ -453,6 +459,19 @@ export function destroySharedRuntime(): void {
   }
   sharedInit = null;
 }
+
+// Fork deviation (host runtime): the host kills the runner with SIGTERM, and
+// the opencode server is spawned detached (own process group) — without this
+// handler it would survive the runner and hold its port (or leak, with an
+// ephemeral port) until the container restarts. Reap it on the way out.
+process.on('SIGTERM', () => {
+  destroySharedRuntime();
+  process.exit(0);
+});
+process.on('SIGINT', () => {
+  destroySharedRuntime();
+  process.exit(0);
+});
 
 function sessionErrorMessage(props: { error?: unknown }): string {
   const err = props.error as { data?: { message?: string } } | undefined;
