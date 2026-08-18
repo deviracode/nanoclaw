@@ -54,9 +54,19 @@ const HOME_DIR = process.env.HOME || os.homedir();
 // Mount security: allowlist stored OUTSIDE project root, never mounted into containers
 export const MOUNT_ALLOWLIST_PATH = path.join(HOME_DIR, '.config', 'nanoclaw', 'mount-allowlist.json');
 export const SENDER_ALLOWLIST_PATH = path.join(HOME_DIR, '.config', 'nanoclaw', 'sender-allowlist.json');
-export const STORE_DIR = path.resolve(PROJECT_ROOT, 'store');
-export const GROUPS_DIR = path.resolve(PROJECT_ROOT, 'groups');
-export const DATA_DIR = path.resolve(PROJECT_ROOT, 'data');
+/** Host runtime (Railway): agents run as child processes, no Docker daemon. */
+export const IS_HOST_RUNTIME = (process.env.NANOCLAW_RUNTIME || '').toLowerCase() === 'host';
+
+// Persistent-storage root. Defaults to the project root (local behavior);
+// Railway mounts a volume at /data and sets NANOCLAW_HOME=/data.
+const HOME_ROOT = process.env.NANOCLAW_HOME ? path.resolve(process.env.NANOCLAW_HOME) : PROJECT_ROOT;
+
+export const STORE_DIR = path.resolve(HOME_ROOT, 'store');
+export const GROUPS_DIR = path.resolve(HOME_ROOT, 'groups');
+export const DATA_DIR = path.resolve(HOME_ROOT, 'data');
+
+/** Health endpoint port — only bound in host runtime (Railway healthchecks). */
+export const HEALTH_PORT = process.env.PORT || '8080';
 // Local agent-template library. Committed but ships empty (+ README). Resolved
 // once at load. Override to another LOCAL path via NANOCLAW_TEMPLATES_DIR; never
 // a remote URL, never an ncl flag, never runtime-mutable.

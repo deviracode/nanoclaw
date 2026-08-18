@@ -1,0 +1,121 @@
+# syntax=docker/dockerfile:1.7
+# NanoClaw Railway host image — Bun agent-runner + Node host + Chromium in one.
+#
+# Railway runs the host directly (host runtime mode): one container holding the
+# compiled Node host, the Bun agent-runner source + deps at the paths the runner
+# defaults to (/app/src, /app/skills, /app/CLAUDE.md), Chromium + system libs
+# (browser skill), and the global CLIs (claude-code, agent-browser, opencode-ai)
+# via the fork's cli-tools.json mechanism. NANOCLAW_HOME=/data (volume) is passed
+# by Railway; there are no per-session docker containers in this mode.
+#
+# Version pins must stay in lockstep with container/Dockerfile: BUN_VERSION and
+# PNPM_VERSION mirror the agent image, and the global CLIs come from
+# container/cli-tools.json (pinned there so a skill can add one with a
+# json-merge instead of editing this Dockerfile).
+
+ARG BUN_VERSION=1.3.12
+ARG PNPM_VERSION=10.33.0
+
+# ---- Stage 1: agent-runner deps (Bun) ---------------------------------------
+FROM node:22-slim AS agent-deps
+ARG BUN_VERSION
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git unzip && rm -rf /var/lib/apt/lists/*
+# Same install shape as the agent image: official script (multi-arch), then the
+# binary to /usr/local/bin. The final stage copies only the binary — the
+# intermediate's /root/.bun is discarded.
+RUN curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}" && \
+    install -m 0755 /root/.bun/bin/bun /usr/local/bin/bun && \
+    rm -rf /root/.bun
+WORKDIR /build/agent-runner
+COPY container/agent-runner/package.json container/agent-runner/bun.lock ./
+RUN bun install --frozen-lockfile
+
+# ---- Stage 2: host build (pnpm) ---------------------------------------------
+FROM node:22-slim AS host-build
+ARG PNPM_VERSION
+RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
+WORKDIR /build/host
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.json ./
+COPY src/ ./src/
+# Runs as root (Railway default); better-sqlite3's build script is allowlisted
+# in pnpm-workspace.yaml. Frozen lockfile: the host is a pnpm workspace with no
+# workspace packages, so these four manifests are the whole resolution surface.
+RUN pnpm install --frozen-lockfile && pnpm run build
+
+# ---- Stage 3: final ----------------------------------------------------------
+FROM node:22-slim
+ARG BUN_VERSION
+ARG PNPM_VERSION
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        chromium \
+        fonts-liberation \
+        fonts-noto-color-emoji \
+        libgbm1 \
+        libnss3 \
+        libatk-bridge2.0-0 \
+        libgtk-3-0 \
+        libx11-xcb1 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxrandr2 \
+        libasound2 \
+        libpangocairo-1.0-0 \
+        libcups2 \
+        libdrm2 \
+        libxshmfence1 \
+        ca-certificates \
+        curl \
+        git \
+        tini \
+        unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Chromium path for agent-browser / Playwright consumers (same as agent image)
+ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+# Belt-and-braces: prevent Playwright's postinstall from downloading its own
+# ~300MB Chromium. We've already installed the system one above.
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
+# pnpm + global CLIs (same mechanism as the agent image: manifest-driven, so a
+# skill can add a tool with a json-merge; only-built-dependencies opt-ins are
+# written by install-cli-tools.sh from the manifest). The opencode/claude
+# providers and the browser skill invoke these CLIs at runtime.
+ENV PNPM_HOME=/pnpm
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
+COPY container/cli-tools.json container/install-cli-tools.sh /tmp/
+RUN --mount=type=cache,target=/root/.cache/pnpm \
+    sh /tmp/install-cli-tools.sh /tmp/cli-tools.json
+
+# Bun runtime (same pin as the agent image)
+COPY --from=agent-deps /usr/local/bin/bun /usr/local/bin/bun
+
+# Host (compiled)
+WORKDIR /app
+COPY --from=host-build /build/host/dist ./dist/
+COPY --from=host-build /build/host/node_modules ./node_modules/
+COPY --from=host-build /build/host/package.json ./
+
+# Agent-runner source + deps at the docker-mode mount paths, so runner path
+# defaults (/app/src, /app/skills, /app/CLAUDE.md) resolve in host mode.
+# Runner deps live at /app/src/node_modules (NOT merged into /app/node_modules:
+# both trees contain top-level names like @types/node, and pnpm's symlinked
+# entries can't merge with bun's real dirs). Bun walks up from the importing
+# file, so any /app/src/** import hits /app/src/node_modules first and gets the
+# runner's own lockfile-pinned copy.
+COPY --from=agent-deps /build/agent-runner/node_modules /app/src/node_modules/
+COPY container/agent-runner/src /app/src/
+COPY container/skills /app/skills/
+COPY container/CLAUDE.md /app/CLAUDE.md
+
+# Data volume + entrypoint
+RUN mkdir -p /data
+# Host health endpoint (GET /healthz) — Railway's healthcheckPath probes this
+EXPOSE 8080
+COPY railway/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["node", "dist/index.js"]

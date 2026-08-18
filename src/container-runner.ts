@@ -19,6 +19,7 @@ import {
   CONTAINER_PIDS_LIMIT,
   DATA_DIR,
   GROUPS_DIR,
+  IS_HOST_RUNTIME,
   ONECLI_API_KEY,
   ONECLI_URL,
   TIMEZONE,
@@ -26,7 +27,15 @@ import {
 import { materializeContainerJson } from './container-config.js';
 import { getContainerConfig } from './db/container-configs.js';
 import { updateContainerConfigScalars } from './db/container-configs.js';
-import { CONTAINER_RUNTIME_BIN, hostGatewayArgs, readonlyMountArgs, stopContainer } from './container-runtime.js';
+import {
+  CONTAINER_RUNTIME_BIN,
+  hostGatewayArgs,
+  killHostRunner,
+  readonlyMountArgs,
+  spawnHostRunner,
+  stopContainer,
+  translateMountsToHostEnv,
+} from './container-runtime.js';
 import { EGRESS_NETWORK, egressNetworkArgs, ensureEgressNetwork } from './egress-lockdown.js';
 import { composeGroupClaudeMd } from './claude-md-compose.js';
 import { getAgentGroup } from './db/agent-groups.js';
@@ -35,6 +44,8 @@ import { initGroupFilesystem } from './group-init.js';
 import { stopTypingRefresh } from './modules/typing/index.js';
 import { log } from './log.js';
 import { validateAdditionalMounts } from './modules/mount-security/index.js';
+import { applyOnecliConfigHostMode, relocateCredentialFiles } from './onecli-host-mode.js';
+import type { OnecliContainerConfig } from './onecli-host-mode.js';
 // Provider host-side config barrel — each provider that needs host-side
 // container setup self-registers on import.
 import './providers/index.js';
@@ -115,6 +126,11 @@ async function spawnContainer(session: Session): Promise<void> {
   const agentGroup = getAgentGroup(session.agent_group_id);
   if (!agentGroup) {
     log.error('Agent group not found', { agentGroupId: session.agent_group_id });
+    return;
+  }
+
+  if (IS_HOST_RUNTIME) {
+    await spawnContainerHost(session, agentGroup);
     return;
   }
 
@@ -213,8 +229,127 @@ async function spawnContainer(session: Session): Promise<void> {
   });
 }
 
+/**
+ * Host-runtime spawn: no Docker daemon, so the agent runs as a Bun child
+ * process against the host filesystem. Docker mounts become env vars
+ * (WORKSPACE_DIR/AGENT_DIR/CLAUDE_CONFIG_DIR) and the agent-runner source is
+ * baked into the image at /app/src. OneCLI credentials come from
+ * `getContainerConfig` translated to env + local files.
+ */
+async function spawnContainerHost(session: Session, agentGroup: AgentGroup): Promise<void> {
+  // Refresh the destination map and current-thread routing so any admin
+  // changes take effect on wake. Destinations come from the agent-to-agent
+  // module — skip when the module isn't installed (table absent).
+  if (hasTable(getDb(), 'agent_destinations')) {
+    const { writeDestinations } = await import('./modules/agent-to-agent/write-destinations.js');
+    writeDestinations(agentGroup.id, session.id);
+  }
+  writeSessionRouting(agentGroup.id, session.id);
+
+  // Materialize + init group filesystem (same as the docker path).
+  const containerConfig = materializeContainerJson(agentGroup.id);
+  const providerName = resolveProviderName(session.agent_provider, containerConfig.provider);
+  initGroupFilesystem(agentGroup, { provider: providerName });
+  const { provider, contribution } = resolveProviderContribution(session, agentGroup, containerConfig);
+  const mounts = buildMounts(agentGroup, session, containerConfig, provider, contribution);
+  const mountEnv = translateMountsToHostEnv(mounts);
+
+  // Extra env: provider contribution + group timezone override (must win over defaults).
+  const extraEnv: Record<string, string> = {};
+  for (const [key, value] of Object.entries(contribution.env ?? {})) extraEnv[key] = value;
+  extraEnv.TZ = containerConfig.timezone ?? TIMEZONE;
+  // HOME points at the group dir (not the claude config dir): CLAUDE_CONFIG_DIR
+  // already directs the Claude SDK, and HOME routes generic tools' dotfiles
+  // per-group so e.g. upload-trace's ~/.claude/projects stays out of the shared
+  // claude dir.
+  extraEnv.HOME = mountEnv.AGENT_DIR ?? process.env.HOME ?? '/root';
+
+  // OneCLI gateway — same semantics as the docker path: unreachable = refuse to spawn.
+  const agentIdentifier = agentGroup.id;
+  await onecli.ensureAgent({ name: agentGroup.name, identifier: agentIdentifier });
+  let gatewayConfig: OnecliContainerConfig | false;
+  try {
+    gatewayConfig = await onecli.getContainerConfig({ agent: agentIdentifier });
+  } catch (err) {
+    throw new Error('OneCLI gateway not applied — refusing to spawn agent without credentials', { cause: err });
+  }
+  if (!gatewayConfig) {
+    throw new Error('OneCLI gateway not applied — refusing to spawn agent without credentials');
+  }
+  const onecliApplied = applyOnecliConfigHostMode(gatewayConfig, ONECLI_URL, DATA_DIR);
+  Object.assign(extraEnv, onecliApplied.env);
+
+  // Credential stubs: copy each to its relocated host path (the agent reads
+  // them at the container path, which is host-relative in host mode). Files
+  // that don't map (e.g. the CA bundle, served via env vars) are skipped.
+  const relocation = relocateCredentialFiles(onecliApplied.files, mountEnv);
+  if (relocation.skipped.length > 0) {
+    log.warn('Skipped relocating unmapped credential files (served via env)', {
+      skipped: relocation.skipped,
+      containerName: `host-${agentGroup.folder}-${session.id}`,
+    });
+  }
+
+  // Child env: process.env minus secrets (docker mode passes only explicit
+  // vars — the host mode spread must not leak API keys), then provider env,
+  // then mount-derived physical host paths (WORKSPACE_DIR/AGENT_DIR/
+  // CLAUDE_CONFIG_DIR/XDG_DATA_HOME) win over any provider/env default.
+  const SECRET_ENV_KEYS = ['ONECLI_API_KEY', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'];
+  const filteredProcessEnv: NodeJS.ProcessEnv = { ...process.env };
+  for (const k of SECRET_ENV_KEYS) delete filteredProcessEnv[k];
+  const env: NodeJS.ProcessEnv = {
+    ...filteredProcessEnv,
+    ...extraEnv,
+    ...mountEnv,
+    NANOCLAW_RUNTIME: 'host',
+  };
+
+  // Image-fixed agent-runner source + skills (baked at /app/src, /app/skills).
+  fs.rmSync(heartbeatPath(agentGroup.id, session.id), { force: true });
+
+  const child = spawnHostRunner({
+    bun: process.env.BUN_BIN || '/usr/local/bin/bun',
+    entry: '/app/src/index.ts',
+    env,
+    cwd: mountEnv.WORKSPACE_DIR ?? sessionDir(agentGroup.id, session.id),
+  });
+
+  activeContainers.set(session.id, { process: child, containerName: `host-${agentGroup.folder}-${session.id}` });
+  markContainerRunning(session.id);
+
+  child.stderr?.on('data', (data) => {
+    for (const line of data.toString().trim().split('\n')) {
+      if (!line) continue;
+      log.debug(line, { agentGroup: agentGroup.folder });
+    }
+  });
+  child.stdout?.on('data', () => {});
+
+  child.on('close', (code) => {
+    activeContainers.delete(session.id);
+    markContainerStopped(session.id);
+    stopTypingRefresh(session.id);
+    log.info('Host-runner agent exited', { sessionId: session.id, code });
+  });
+  child.on('error', (err) => {
+    activeContainers.delete(session.id);
+    markContainerStopped(session.id);
+    stopTypingRefresh(session.id);
+    log.error('Host-runner spawn error', { sessionId: session.id, err });
+  });
+}
+
 /** Kill a container for a session. */
 export function killContainer(sessionId: string, reason: string, onExit?: () => void): void {
+  if (IS_HOST_RUNTIME) {
+    const entry = activeContainers.get(sessionId);
+    if (!entry) return;
+    if (onExit) entry.process.once('close', onExit);
+    log.info('Killing host-runner agent', { sessionId, reason });
+    killHostRunner(entry.process);
+    return;
+  }
+
   const entry = activeContainers.get(sessionId);
   if (!entry) return;
 
@@ -551,6 +686,10 @@ const execAsync = promisify(exec);
 
 /** Build a per-agent-group Docker image with custom packages. */
 export async function buildAgentGroupImage(agentGroupId: string): Promise<void> {
+  if (IS_HOST_RUNTIME) {
+    throw new Error('install_packages is not supported in host runtime (NANOCLAW_RUNTIME=host) — no Docker daemon');
+  }
+
   const agentGroup = getAgentGroup(agentGroupId);
   if (!agentGroup) throw new Error('Agent group not found');
 

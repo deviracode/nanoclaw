@@ -7,3 +7,9 @@
 // self-registration import below.
 
 import './cli.js';
+
+// whatsapp (native, no Chat SDK)
+import './whatsapp.js';
+
+// telegram
+import './telegram.js';

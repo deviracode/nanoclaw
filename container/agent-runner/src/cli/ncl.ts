@@ -3,13 +3,17 @@
  * ncl — NanoClaw CLI client (container edition).
  *
  * Same interface as the host-side `bin/ncl`. Detects that it's inside a
- * container (the session DBs exist at /workspace/) and uses a DB transport
- * instead of the Unix socket transport.
+ * container (the session DBs exist under WORKSPACE_DIR) and uses a DB
+ * transport instead of the Unix socket transport.
  *
  * Writes a cli_request system message to outbound.db, polls inbound.db
- * for the response. Self-contained — no imports from agent-runner.
+ * for the response. Self-contained — the only agent-runner import is the
+ * paths module (session DBs live under WORKSPACE_DIR).
  */
+import path from 'path';
 import { Database } from 'bun:sqlite';
+
+import { WORKSPACE_DIR } from '../paths.js';
 
 // ---------------------------------------------------------------------------
 // Frame types (mirrors src/cli/frame.ts on the host)
@@ -31,8 +35,8 @@ type ResponseFrame =
 // Paths
 // ---------------------------------------------------------------------------
 
-const INBOUND_DB = '/workspace/inbound.db';
-const OUTBOUND_DB = '/workspace/outbound.db';
+const INBOUND_DB = path.join(WORKSPACE_DIR, 'inbound.db');
+const OUTBOUND_DB = path.join(WORKSPACE_DIR, 'outbound.db');
 
 // ---------------------------------------------------------------------------
 // DB transport

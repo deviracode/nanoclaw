@@ -2,17 +2,19 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+import { AGENT_DIR } from '../paths.js';
+
 /**
  * Create the agent's persistent memory scaffold, container-side, at boot.
  *
  * The runner owns its own workspace: it writes the memory tree straight into
- * `/workspace/agent` (the host-backed, RW group dir, so it persists across the
+ * AGENT_DIR (the host-backed, RW group dir, so it persists across the
  * ephemeral container). No host-side step, nothing mounted in.
  *
  * The default memory files live as real markdown templates next to this module
  * (under `templates/`) — not as strings in code — so the
  * doctrine is editable as markdown and the agent receives an unescaped copy.
- * They ship in the mounted `/app/src` tree, so no image change is needed.
+ * They ship in the mounted SRC_DIR tree, so no image change is needed.
  *
  * Idempotent — only writes what's missing, so the agent's own edits and
  * accumulated memory are never clobbered on a later wake. Every provider uses
@@ -20,7 +22,7 @@ import { fileURLToPath } from 'url';
  */
 const TEMPLATES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'templates');
 
-export function ensureMemoryScaffold(baseDir = '/workspace/agent'): void {
+export function ensureMemoryScaffold(baseDir = AGENT_DIR): void {
   const memoryDir = path.join(baseDir, 'memory');
   const systemDir = path.join(memoryDir, 'system');
 

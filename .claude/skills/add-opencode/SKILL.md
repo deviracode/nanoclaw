@@ -9,6 +9,12 @@ NanoClaw runs agents in a long-lived **poll loop** inside the container. The bac
 
 Trunk ships with only the `claude` provider baked in. This skill copies the OpenCode provider files in from the `providers` branch, wires them into the host and container barrels, installs dependencies, and rebuilds the image.
 
+> **Fork deviation (nanoclaw-railway branch):** this fork installs global CLIs data-driven from `container/cli-tools.json`, not via per-CLI `ARG OPENCODE_VERSION` + `pnpm install -g` lines in `container/Dockerfile`. When re-running this skill here:
+> - Skip step 5 (the ARG + standalone RUN block) — opencode-ai is already in `cli-tools.json`; adding the block creates a duplicate install.
+> - Do NOT copy the bundled `opencode-dockerfile.test.ts` over `src/opencode-dockerfile.test.ts` — the fork-adapted version asserts the cli-tools.json mechanism (pin 1.4.17, never `latest`). Copying the upstream test makes it go red against this fork's Dockerfile.
+> - `container/agent-runner/src/providers/types.ts` carries a hand-edit (upstream's wider `McpServerConfig` union) — the wholesale copy in step 2 preserves it since it comes from the same branch.
+> - `src/opencode-dockerfile-railway.test.ts` (fork-only) guards `railway/Dockerfile.railway`; keep the cli-tools install invocation in that file.
+
 ## Install
 
 ### Pre-flight
