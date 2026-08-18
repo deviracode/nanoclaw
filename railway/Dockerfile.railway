@@ -86,7 +86,7 @@ ENV PNPM_HOME=/pnpm
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 COPY container/cli-tools.json container/install-cli-tools.sh /tmp/
-RUN --mount=type=cache,target=/root/.cache/pnpm \
+RUN --mount=type=cache,id=pnpm-cache,target=/root/.cache/pnpm \
     sh /tmp/install-cli-tools.sh /tmp/cli-tools.json
 
 # Bun runtime (same pin as the agent image)
