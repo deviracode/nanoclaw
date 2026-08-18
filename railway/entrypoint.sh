@@ -18,7 +18,9 @@ node -e "const fs=require('fs'),p='/app/package.json',v=JSON.parse(fs.readFileSy
 
 # clidash — read-only ncl-derived dashboard, localhost-bound (reach it via
 # `ssh -L 4690:127.0.0.1:4690 railway-nanoclaw`). Started before the host so it
-# is already listening by the time the ncl socket exists.
-CLIDASH_CONFIG=/opt/clidash/clidash.config.railway.json node /opt/clidash/server.js >/dev/null 2>&1 &
+# is already listening by the time the ncl socket exists. PORT is pinned to
+# 4690 because clidash overrides its config port with the PORT env var, which
+# Railway injects (8080 here) and would collide with the host's health server.
+CLIDASH_CONFIG=/opt/clidash/clidash.config.railway.json PORT=4690 node /opt/clidash/server.js >/dev/null 2>&1 &
 
 exec "$@"
