@@ -67,7 +67,7 @@
         "name": "skills",
         "label": "Skills",
         "lang": "markdown",
-        "patterns": ["groups/*/skills/*/SKILL.md", "groups/*/skills/*/*/SKILL.md"]
+        "patterns": ["groups/*/skills/*/SKILL.md", "groups/*/skills/*/*/SKILL.md", "data/v2-sessions/*/.claude-shared/skills/*/SKILL.md"]
       },
       {
         "name": "claude-md",

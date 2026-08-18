@@ -67,6 +67,19 @@ export const DATA_DIR = path.resolve(HOME_ROOT, 'data');
 
 /** Health endpoint port — only bound in host runtime (Railway healthchecks). */
 export const HEALTH_PORT = process.env.PORT || '8080';
+
+// Shared agent surfaces. In the docker runtime these live in the repo checkout
+// under cwd; in host runtime (Railway image) they are baked at fixed /app
+// paths. Functions (not consts) so tests that swap cwd keep working.
+export function sharedSkillsDir(): string {
+  return IS_HOST_RUNTIME ? '/app/skills' : path.resolve(process.cwd(), 'container', 'skills');
+}
+export function sharedClaudeMd(): string {
+  return IS_HOST_RUNTIME ? '/app/CLAUDE.md' : path.resolve(process.cwd(), 'container', 'CLAUDE.md');
+}
+export function sharedMcpToolsDir(): string {
+  return IS_HOST_RUNTIME ? '/app/src/mcp-tools' : path.resolve(process.cwd(), 'container', 'agent-runner', 'src', 'mcp-tools');
+}
 // Local agent-template library. Committed but ships empty (+ README). Resolved
 // once at load. Override to another LOCAL path via NANOCLAW_TEMPLATES_DIR; never
 // a remote URL, never an ncl flag, never runtime-mutable.

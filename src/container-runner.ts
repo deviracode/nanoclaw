@@ -23,6 +23,8 @@ import {
   ONECLI_API_KEY,
   ONECLI_URL,
   TIMEZONE,
+  sharedClaudeMd,
+  sharedSkillsDir,
 } from './config.js';
 import { materializeContainerJson } from './container-config.js';
 import { getContainerConfig } from './db/container-configs.js';
@@ -482,9 +484,9 @@ export function buildMounts(
 
   // Shared CLAUDE.md — read-only, imported by the composed entry point via
   // the `.claude-shared.md` symlink inside the group dir.
-  const sharedClaudeMd = path.join(process.cwd(), 'container', 'CLAUDE.md');
-  if (defaultSurfaces && fs.existsSync(sharedClaudeMd)) {
-    mounts.push({ hostPath: sharedClaudeMd, containerPath: '/app/CLAUDE.md', readonly: true });
+  const sharedClaudeMdPath = sharedClaudeMd();
+  if (defaultSurfaces && fs.existsSync(sharedClaudeMdPath)) {
+    mounts.push({ hostPath: sharedClaudeMdPath, containerPath: '/app/CLAUDE.md', readonly: true });
   }
 
   // Per-group .claude-shared at /home/node/.claude (Claude state, settings,
@@ -498,7 +500,7 @@ export function buildMounts(
   mounts.push({ hostPath: agentRunnerSrc, containerPath: '/app/src', readonly: true });
 
   // Shared skills — read-only, symlinks in .claude-shared/skills/ point here.
-  const skillsSrc = path.join(projectRoot, 'container', 'skills');
+  const skillsSrc = sharedSkillsDir();
   if (fs.existsSync(skillsSrc)) {
     mounts.push({ hostPath: skillsSrc, containerPath: '/app/skills', readonly: true });
   }
@@ -578,11 +580,11 @@ function syncSkillSymlinks(claudeDir: string, containerConfig: import('./contain
  */
 function selectedSkillNames(containerConfig: import('./container-config.js').ContainerConfig): string[] {
   if (containerConfig.skills !== 'all') return containerConfig.skills;
-  const sharedSkillsDir = path.join(process.cwd(), 'container', 'skills');
-  return fs.existsSync(sharedSkillsDir)
-    ? fs.readdirSync(sharedSkillsDir).filter((e) => {
+  const skillsSourceDir = sharedSkillsDir();
+  return fs.existsSync(skillsSourceDir)
+    ? fs.readdirSync(skillsSourceDir).filter((e) => {
         try {
-          return fs.statSync(path.join(sharedSkillsDir, e)).isDirectory();
+          return fs.statSync(path.join(skillsSourceDir, e)).isDirectory();
         } catch {
           return false;
         }

@@ -47,4 +47,21 @@ describe('host runtime config', () => {
     const { HEALTH_PORT } = await import('./config.js');
     expect(HEALTH_PORT).toBe('8080');
   });
+
+  test('shared surfaces resolve under the repo in docker runtime', async () => {
+    delete process.env.NANOCLAW_RUNTIME;
+    const { sharedSkillsDir, sharedClaudeMd, sharedMcpToolsDir } = await import('./config.js');
+    const root = process.cwd();
+    expect(sharedSkillsDir()).toBe(path.resolve(root, 'container', 'skills'));
+    expect(sharedClaudeMd()).toBe(path.resolve(root, 'container', 'CLAUDE.md'));
+    expect(sharedMcpToolsDir()).toBe(path.resolve(root, 'container', 'agent-runner', 'src', 'mcp-tools'));
+  });
+
+  test('shared surfaces resolve to /app paths in host runtime', async () => {
+    process.env.NANOCLAW_RUNTIME = 'host';
+    const { sharedSkillsDir, sharedClaudeMd, sharedMcpToolsDir } = await import('./config.js');
+    expect(sharedSkillsDir()).toBe('/app/skills');
+    expect(sharedClaudeMd()).toBe('/app/CLAUDE.md');
+    expect(sharedMcpToolsDir()).toBe('/app/src/mcp-tools');
+  });
 });
