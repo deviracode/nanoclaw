@@ -1,10 +1,14 @@
-import { defineRailway, github, group, image, postgres, preserve, project, service } from "railway/iac";
+import { defineRailway, github, group, postgres, preserve, project, service } from "railway/iac";
 
 export default defineRailway((ctx) => {
   const db = postgres("nanoclaw-db");
 
   const gateway = service("nanoclaw-onecli", {
-    source: image("ghcr.io/onecli/onecli@sha256:d0177458b1f9ecece4abbe9abb6c5f925475357c1734f50a675d83a2ef9c8687"), // re-pin via: docker buildx imagetools inspect ghcr.io/onecli/onecli:latest
+    source: github("deviracode/nanoclaw", { branch: "main" }),
+    build: {
+      builder: "DOCKERFILE",
+      dockerfilePath: "railway/Dockerfile.onecli",
+    },
     deploy: { numReplicas: 1, restartPolicyType: "ON_FAILURE", restartPolicyMaxRetries: 10 },
     env: {
       DATABASE_URL: "${{nanoclaw-db.DATABASE_URL}}",

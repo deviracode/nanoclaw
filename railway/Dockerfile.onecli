@@ -1,0 +1,11 @@
+# OneCLI gateway image for Railway — derived from the official all-in-one image.
+#
+# The official image runs as `node` (uid 1000). Railway mounts volumes with a
+# root-owned root, so the entrypoint's writes to /app/data (auto-generated
+# SECRET_ENCRYPTION_KEY, runtime-config.json, gateway --data-dir) fail with
+# EACCES. Running as root fixes the volume writes. The service is single-tenant
+# and reachable only on the Railway private network (the host's ONECLI_API_KEY
+# gates the API), so the privilege bump is contained.
+FROM ghcr.io/onecli/onecli@sha256:d0177458b1f9ecece4abbe9abb6c5f925475357c1734f50a675d83a2ef9c8687
+
+USER root
