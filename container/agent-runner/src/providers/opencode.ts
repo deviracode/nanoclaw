@@ -1,5 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import { existsSync } from 'fs';
+import path from 'path';
 import { pathToFileURL } from 'url';
 
 import { createOpencodeClient, type FilePartInput, type OpencodeClient } from '@opencode-ai/sdk';
@@ -22,6 +23,19 @@ import { AGENT_DIR } from '../paths.js';
 
 function log(msg: string): void {
   console.error(`[opencode-provider] ${msg}`);
+}
+
+/**
+ * Resolve the skills folder(s) to surface to OpenCode. Host mode prefers the
+ * group's selected skills (symlinked by the host at $CLAUDE_CONFIG_DIR/skills);
+ * docker mode (no CLAUDE_CONFIG_DIR) falls back to the shared /app/skills
+ * mount. Returns undefined when neither exists.
+ */
+export function resolveSkillsPaths(env: NodeJS.ProcessEnv = process.env): { paths: string[] } | undefined {
+  const claudeSkillsDir = env.CLAUDE_CONFIG_DIR ? path.join(env.CLAUDE_CONFIG_DIR, 'skills') : '';
+  if (claudeSkillsDir && existsSync(claudeSkillsDir)) return { paths: [claudeSkillsDir] };
+  if (existsSync('/app/skills')) return { paths: ['/app/skills'] };
+  return undefined;
 }
 
 // The input modalities OpenCode's config schema accepts on a model entry
@@ -322,6 +336,13 @@ export function buildOpenCodeConfig(options: ProviderOptions): Record<string, un
 
   const mcp = mcpServersToOpenCodeConfig(options.mcpServers);
 
+  // NanoClaw skills (SKILL.md folders) surfaced to OpenCode. Host mode: the
+  // group's selected skills are symlinked at $CLAUDE_CONFIG_DIR/skills by the
+  // host (syncSkillSymlinks) — per-group selection. Docker mode:
+  // CLAUDE_CONFIG_DIR is unset, so fall back to the shared mount at
+  // /app/skills. Fork deviation: upstream wires no skills into the config.
+  const skills = resolveSkillsPaths();
+
   // Load the shared base + per-group fragments through OpenCode's native
   // instructions pipeline (session/instruction.ts). Absolute paths with
   // globs are supported. Files are read raw — `@./...` includes are NOT expanded
@@ -346,6 +367,7 @@ export function buildOpenCodeConfig(options: ProviderOptions): Record<string, un
   return {
     ...(model ? { model } : {}),
     ...(smallModel ? { small_model: smallModel } : {}),
+    ...(skills ? { skills } : {}),
     enabled_providers: [provider],
     // A flat `permission: 'allow'` string leaves every category — including
     // `question`, OpenCode's built-in interactive multi-choice tool — to
