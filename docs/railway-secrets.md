@@ -61,6 +61,12 @@ ssh -L 10254:127.0.0.1:10254 railway-nanoclaw-onecli   # keep this terminal open
 
 (Refresh the instance after a redeploy: `railway ssh config`.)
 
+> **The gateway is private-only — never give it a public domain.** It runs in
+> local mode (no login), so its API (`/api/agents`, `/api/secrets`) is open to
+> anyone who can reach it. A Railway public domain exposes the vault to the
+> internet; Google/GitHub OAuth connect flows are therefore unavailable (they
+> require an HTTPS redirect URI) — use the tunnel instead.
+
 ### Create a secret (e.g. DeepSeek)
 
 UI: **Secrets → Create**:
