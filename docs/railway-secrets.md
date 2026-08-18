@@ -74,10 +74,28 @@ UI: **Secrets → Create**:
 | Header | `Authorization` |
 | Value format | `Bearer {value}` |
 
-Agents auto-created by the host default to **`all` secret mode** — every vault
-secret whose host pattern matches is injected automatically, no per-agent
-assignment needed. (If an agent is in `selective` mode it gets nothing until
-assigned: `onecli agents set-secrets --id <agent-id> --secret-ids ...`.)
+Agents auto-created by the host default to **`selective` secret mode** — every
+vault secret must be **granted to the agent** (Agents → the agent → Attach) or
+the agent gets `credentials exist but this agent does not have access` at
+request time. (DeepSeek was attached this way; new secrets need the same
+attach step.)
+
+### The placeholder-token pattern (CLI tools)
+
+CLIs like `gh`, `railway`, `supabase` need a token in the environment to skip
+their login check. The host carries **placeholders** (`GH_TOKEN`,
+`RAILWAY_API_TOKEN`, `SUPABASE_ACCESS_TOKEN` = `placeholder` — Railway vars,
+harmless) and the real tokens live in OneCLI:
+
+| CLI | Env placeholder (host var) | OneCLI secret host-pattern | Header / format |
+|---|---|---|---|
+| gh | `GH_TOKEN` | `api.github.com` | `Authorization: Bearer {value}` |
+| railway | `RAILWAY_API_TOKEN` | `api.railway.com` | `Authorization: Bearer {value}` |
+| supabase | `SUPABASE_ACCESS_TOKEN` | `api.supabase.com` | `Authorization: Bearer {value}` |
+
+The gateway proxy swaps the placeholder for the real token per request — real
+keys never sit in the environment. Skills (`container/skills/gh-cli`,
+`railway-cli`, `supabase-cli`) teach the agent this pattern.
 
 ### Update / rotate a secret
 

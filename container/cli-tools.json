@@ -13,5 +13,10 @@
     "name": "opencode-ai",
     "version": "1.4.17",
     "onlyBuilt": false
+  },
+  {
+    "name": "supabase",
+    "version": "2.114.0",
+    "onlyBuilt": false
   }
 ]
