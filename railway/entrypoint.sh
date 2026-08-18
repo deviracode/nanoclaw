@@ -16,4 +16,9 @@ DATA_DIR_PATH="$DATA_ROOT/data"
 mkdir -p "$DATA_DIR_PATH"
 node -e "const fs=require('fs'),p='/app/package.json',v=JSON.parse(fs.readFileSync(p,'utf8')).version;fs.writeFileSync(process.argv[1],JSON.stringify({version:v,updatedAt:new Date().toISOString(),via:'railway'},null,2)+'\n')" "$DATA_DIR_PATH/upgrade-state.json"
 
+# clidash — read-only ncl-derived dashboard, localhost-bound (reach it via
+# `ssh -L 4690:127.0.0.1:4690 railway-nanoclaw`). Started before the host so it
+# is already listening by the time the ncl socket exists.
+CLIDASH_CONFIG=/opt/clidash/clidash.config.railway.json node /opt/clidash/server.js >/dev/null 2>&1 &
+
 exec "$@"

@@ -1,7 +1,9 @@
-import { defineRailway, github, group, postgres, preserve, project, service } from "railway/iac";
+import { defineRailway, github, group, postgres, preserve, project, service, volume } from "railway/iac";
 
 export default defineRailway((ctx) => {
   const db = postgres("nanoclaw-db");
+  const hostVolume = volume("nanoclaw-volume", { sizeMB: 50000, region: "europe-west4-drams3a" });
+  const gatewayVolume = volume("nanoclaw-onecli-volume", { sizeMB: 50000, region: "europe-west4-drams3a" });
 
   const gateway = service("nanoclaw-onecli", {
     source: github("deviracode/nanoclaw", { branch: "main" }),
@@ -10,6 +12,9 @@ export default defineRailway((ctx) => {
       dockerfilePath: "railway/Dockerfile.onecli",
     },
     deploy: { numReplicas: 1, restartPolicyType: "ON_FAILURE", restartPolicyMaxRetries: 10 },
+    volumeMounts: {
+      "/app/data": gatewayVolume,
+    },
     env: {
       DATABASE_URL: "${{nanoclaw-db.DATABASE_URL}}",
       APP_URL: "http://${{nanoclaw-onecli.RAILWAY_PRIVATE_DOMAIN}}:10254",
@@ -27,6 +32,9 @@ export default defineRailway((ctx) => {
     },
     healthcheckPath: "/healthz",
     deploy: { numReplicas: 1, restartPolicyType: "ON_FAILURE", restartPolicyMaxRetries: 10 },
+    volumeMounts: {
+      "/data": hostVolume,
+    },
     env: {
       NODE_ENV: "production",
       NANOCLAW_RUNTIME: "host",
@@ -51,6 +59,6 @@ export default defineRailway((ctx) => {
   });
 
   return project("nanoclaw", {
-    resources: [group("NanoClaw", [host, gateway]), db],
+    resources: [group("NanoClaw", [host, gateway]), db, hostVolume, gatewayVolume],
   });
 });

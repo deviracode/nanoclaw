@@ -116,5 +116,13 @@ EXPOSE 8080
 COPY railway/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# clidash — read-only ncl-derived dashboard (localhost-bound, SSH-tunnel access)
+COPY tools/clidash /opt/clidash/
+
+# ncl wrapper for clidash + operator use inside the container (compiled dist,
+# talks to the host's ncl socket at /data/data/ncl.sock)
+RUN printf '#!/bin/sh\nexec node /app/dist/cli/client.js "$@"\n' > /usr/local/bin/ncl && \
+    chmod +x /usr/local/bin/ncl
+
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["node", "dist/index.js"]
