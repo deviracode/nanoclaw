@@ -43,8 +43,13 @@ function walk(root, rel, segs, depth, out, deny) {
     const childRel = rel ? `${rel}/${e.name}` : e.name;
     if (isDenied(childRel, deny)) continue;
     if (last) {
-      if (e.isFile()) out.add(childRel);
-    } else if (e.isDirectory()) {
+      // Fork deviation: treat symlinks as files at the last segment. NanoClaw
+      // exposes the group's skills as symlinks (.claude-shared/skills/<name>
+      // → /app/skills/<name>); Dirent.isDirectory() never follows them, so
+      // the skills collection came up empty. Depth is bounded by the pattern
+      // segment count, so a symlink cycle cannot recurse forever.
+      if (e.isFile() || e.isSymbolicLink()) out.add(childRel);
+    } else if (e.isDirectory() || e.isSymbolicLink()) {
       walk(root, childRel, segs, depth + 1, out, deny);
     }
   }
