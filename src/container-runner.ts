@@ -523,6 +523,12 @@ export function buildMounts(
  * Sync skill symlinks in .claude-shared/skills/ to match the container.json
  * selection. Each symlink points to a container path (/app/skills/<name>)
  * so it's dangling on the host but valid inside the container.
+ *
+ * Host runtime (Railway): real copies instead of symlinks. The dashboard
+ * (clidash) serves these files and its containment guard realpath-checks
+ * every served path against /data — symlinks into /app/skills would be
+ * rejected as escaping the root. Copies are small (SKILL.md + helpers) and
+ * refreshed on every spawn when the source is newer.
  */
 function syncSkillSymlinks(claudeDir: string, containerConfig: import('./container-config.js').ContainerConfig): void {
   const skillsDir = path.join(claudeDir, 'skills');
@@ -550,6 +556,8 @@ function syncSkillSymlinks(claudeDir: string, containerConfig: import('./contain
   // Create symlinks for desired skills (container path targets)
   for (const skill of desired) {
     const linkPath = path.join(skillsDir, skill);
+    const sourceDir = path.join(sharedSkillsDir(), skill);
+    if (!fs.existsSync(sourceDir)) continue;
     let entry: fs.Stats | undefined;
     try {
       entry = fs.lstatSync(linkPath);
@@ -557,7 +565,25 @@ function syncSkillSymlinks(claudeDir: string, containerConfig: import('./contain
       /* missing */
     }
     if (!entry) {
-      fs.symlinkSync(`/app/skills/${skill}`, linkPath);
+      if (IS_HOST_RUNTIME) {
+        fs.cpSync(sourceDir, linkPath, { recursive: true });
+      } else {
+        fs.symlinkSync(`/app/skills/${skill}`, linkPath);
+      }
+    } else if (IS_HOST_RUNTIME && entry.isSymbolicLink()) {
+      // Migrate a docker-era symlink to a real copy so the dashboard's
+      // realpath containment check passes.
+      fs.unlinkSync(linkPath);
+      fs.cpSync(sourceDir, linkPath, { recursive: true });
+    } else if (IS_HOST_RUNTIME) {
+      // Real copy exists — refresh it when the shared source is newer so
+      // image updates propagate without waiting for a manual re-sync.
+      const srcMtime = fs.statSync(sourceDir).mtimeMs;
+      const dstMtime = entry.mtimeMs;
+      if (srcMtime > dstMtime) {
+        fs.rmSync(linkPath, { recursive: true, force: true });
+        fs.cpSync(sourceDir, linkPath, { recursive: true });
+      }
     } else if (!entry.isSymbolicLink()) {
       // A real entry here is either a template overlay (intentional; see
       // src/group-skills.ts) or a stale pre-refactor skill copy that shadows
